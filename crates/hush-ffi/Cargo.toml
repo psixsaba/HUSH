@@ -1,0 +1,14 @@
+[package]
+name = "hush-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "C API for the Hush audio pipeline"
+
+[lib]
+name = "hush"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[dependencies]
+hush-core = { path = "../hush-core" }

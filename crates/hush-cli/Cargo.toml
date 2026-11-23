@@ -1,0 +1,17 @@
+[package]
+name = "hush-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Clean a WAV file or a live microphone with Hush"
+
+[[bin]]
+name = "hush"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+ctrlc.workspace = true
+hush-core = { path = "../hush-core" }
+serde_json.workspace = true

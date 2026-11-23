@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/hush-core",
+    "crates/hush-ffi",
+    "crates/hush-cli",
+    "apps/desktop/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+cc = "1"
+clap = { version = "4", features = ["derive"] }
+cpal = "0.15"
+ctrlc = "3"
+deep-filter-rt = "0.2"
+hound = "3.5"
+libc = "0.2"
+nnnoiseless = "0.5"
+ndarray = "0.17"
+rtrb = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+webrtc-audio-processing = { version = "~2.1", features = ["bundled"] }
+webrtc-audio-processing-config = "~2.1"

@@ -1,0 +1,23 @@
+[package]
+name = "hush-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "48 kHz echo and noise cancellation pipeline"
+
+[dependencies]
+deep-filter-rt.workspace = true
+ndarray.workspace = true
+nnnoiseless.workspace = true
+webrtc-audio-processing.workspace = true
+webrtc-audio-processing-config.workspace = true
+cpal.workspace = true
+hound.workspace = true
+libc.workspace = true
+rtrb.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[build-dependencies]
+cc.workspace = true

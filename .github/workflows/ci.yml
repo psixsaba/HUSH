@@ -1,0 +1,38 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config cmake clang meson ninja-build g++
+      - name: Windows Meson
+        if: runner.os == 'Windows'
+        run: pip install meson ninja
+      - name: Test the audio core
+        env:
+          CARGO_BUILD_JOBS: 2
+        run: cargo test -p hush-core -p hush-ffi -p hush-cli --release -- --test-threads=8
+
+  macos-driver:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the HAL plugin
+        run: |
+          chmod +x drivers/macos/build.sh
+          HUSH_UNIVERSAL=1 drivers/macos/build.sh
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check the desktop shell
+        run: cargo check -p hush-desktop --release

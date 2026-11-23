@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Hush window",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

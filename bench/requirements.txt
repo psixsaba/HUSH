@@ -1,0 +1,7 @@
+numpy
+scipy
+soundfile
+pystoi
+onnxruntime
+# DPDFNet is optional. Install it when you want the comparison:
+#   pip install dpdfnet
