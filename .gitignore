@@ -17,3 +17,6 @@ drivers/windows/third_party
 .idea
 .vscode
 *.wav.bak
+**/__pycache__/
+*.pyc
+*.tsbuildinfo
