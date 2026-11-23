@@ -141,10 +141,10 @@ Measured on this Linux machine, release build, synthetic 10 s vowels at 5 dB SNR
 | System | SI-SDR | STOI | SIG | BAK | OVRL | Cost |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | Noisy input | 5.06 dB | 0.918 | 3.15 | 1.63 | 1.75 | |
-| DeepFilterNet3 | 10.44 dB | 0.824 | 1.75 | 3.51 | 1.63 | 4.1% CPU mean, 5.8% p95, 30.0 ms |
-| RNNoise | 8.15 dB | 0.820 | 2.66 | 2.52 | 1.66 | 0.45% CPU mean, 10.0 ms |
+| DeepFilterNet3 | 10.44 dB | 0.824 | 1.75 | 3.51 | 1.63 | 4.2% CPU mean, 6.1% p95, 30.0 ms |
+| RNNoise | 8.15 dB | 0.820 | 2.66 | 2.52 | 1.66 | 0.47% CPU mean, 10.0 ms |
 | DPDFNet8 48 kHz | 10.71 dB | 0.841 | 2.72 | 3.86 | 2.40 | 6.3 s Python wall time for 10 s |
 
-AEC3 plus DeepFilterNet3 on the echo clip: 5.5% CPU mean, 7.2% p95, still 30 ms of model delay. A pure 80 ms echo in the unit test lost more than 8 dB in the last half second. DeepFilterNet3 is the model in the callback. DPDFNet8 won this clip and is not wired into the frame loop; the reason is in [docs/DECISIONS.md](docs/DECISIONS.md).
+AEC3 plus DeepFilterNet3 on the echo clip: 5.5% CPU mean, 7.2% p95, 30 ms of model delay. The p95 frame was 0.72 ms. A pure 80 ms echo in the unit test lost more than 8 dB in the last half second. DeepFilterNet3 is the model in the callback. DPDFNet8 won this clip and is not wired into the frame loop; the reason is in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 STOI fell for every suppressor versus the noisy mix. That is this synthetic set, not a claim about VoiceBank.

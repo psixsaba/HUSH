@@ -27,13 +27,13 @@ On the synthetic 10 s, 5 dB clip, measured in this Linux release build:
 | System | SI-SDR | STOI | DNSMOS OVRL | CPU |
 | --- | ---: | ---: | ---: | --- |
 | Noisy | 5.06 dB | 0.918 | 1.75 | |
-| DeepFilterNet3 | 10.44 dB | 0.824 | 1.63 | 4.1% mean, 5.8% p95, 30 ms |
-| RNNoise | 8.15 dB | 0.820 | 1.66 | 0.45% mean, 10 ms |
+| DeepFilterNet3 | 10.44 dB | 0.824 | 1.63 | 4.2% mean, 6.1% p95, 30 ms |
+| RNNoise | 8.15 dB | 0.820 | 1.66 | 0.47% mean, 10 ms |
 | DPDFNet8 48 kHz | 10.71 dB | 0.841 | 2.40 | 6.3 s wall for 10 s audio, Python |
 
 DPDFNet8 (Apache-2.0) is the better suppressor on this clip: higher SI-SDR, higher STOI, and a clearly higher DNSMOS OVRL, driven by SIG 2.72 versus DeepFilterNet3's 1.75. Both neural models lower STOI relative to the noisy mix. These are formant vowels, not VoiceBank, so STOI and DNSMOS SIG are harsher than they will be on real speech. DeepFilterNet3 does the noise job: BAK goes from 1.63 to 3.51.
 
-DPDFNet stays out of the audio callback. The 6.3 s figure is an offline Python process, including model load, not a p95 frame time, and there is no tract or ONNX streaming port of its STFT graph in this tree. A wrong port would be a worse product than a measured 0.58 ms p95. DeepFilterNet3 stays the shipping model because its whole frame, AEC included, has p95 CPU of 7.2% and p95 time of 0.72 ms, under the 8 ms budget, on this machine. Revisit DPDFNet on an Apple Silicon build that reports the same per-frame numbers. If that p95 is under 8 ms, it should replace DeepFilterNet3.
+DPDFNet stays out of the audio callback. The 6.3 s figure is an offline Python process, including model load, not a p95 frame time, and there is no tract or ONNX streaming port of its STFT graph in this tree. A wrong port would be a worse product than a measured 0.58 ms p95. DeepFilterNet3 stays the shipping model because a frame with AEC and DeepFilterNet3 has p95 CPU of 7.2% and p95 time of 0.72 ms, under the 8 ms budget, on this machine. Noise removal alone is 0.61 ms at p95. Revisit DPDFNet on an Apple Silicon build that reports the same per-frame numbers. If that p95 is under 8 ms, it should replace DeepFilterNet3.
 
 ## Why the cleaned file is shifted
 
