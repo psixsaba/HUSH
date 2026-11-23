@@ -18,6 +18,8 @@ pub struct PipelineConfig {
     pub aec_enabled: bool,
     pub ns_backend: NsBackend,
     pub strength: f32,
+    /// Clean Krisp Alt Speaker, play that signal, and use it as the AEC reference.
+    pub clean_incoming: bool,
 }
 
 impl Default for PipelineConfig {
@@ -28,6 +30,7 @@ impl Default for PipelineConfig {
             aec_enabled: false,
             ns_backend: NsBackend::DpdfNet,
             strength: 1.0,
+            clean_incoming: true,
         }
     }
 }
@@ -292,6 +295,22 @@ mod tests {
     }
 
     #[test]
+    fn target_speaker_is_refused() {
+        let built = Pipeline::new(PipelineConfig {
+            enabled: true,
+            muted: false,
+            aec_enabled: false,
+            ns_backend: NsBackend::TargetSpeaker,
+            strength: 1.0,
+            clean_incoming: false,
+        });
+        match built {
+            Err(err) => assert!(err.to_string().contains("TARGET_SPEAKER")),
+            Ok(_) => panic!("target speaker must not load"),
+        }
+    }
+
+    #[test]
     fn bypass_is_identity_and_reports_zero_latency() {
         let mut pipeline = Pipeline::new(PipelineConfig {
             enabled: true,
@@ -299,6 +318,7 @@ mod tests {
             aec_enabled: false,
             ns_backend: NsBackend::Off,
             strength: 1.0,
+            clean_incoming: false,
         })
         .unwrap();
         let input = sine(FRAME_SAMPLES * 5, 440.0, 0.2);
@@ -320,6 +340,7 @@ mod tests {
             aec_enabled: false,
             ns_backend: NsBackend::RnNoise,
             strength: 1.0,
+            clean_incoming: false,
         })
         .unwrap();
         assert_eq!(pipeline.algorithmic_latency_samples(), 0);
@@ -338,6 +359,7 @@ mod tests {
             aec_enabled: false,
             ns_backend: NsBackend::RnNoise,
             strength: 1.0,
+            clean_incoming: false,
         })
         .unwrap();
         assert_eq!(
@@ -360,6 +382,7 @@ mod tests {
             aec_enabled: false,
             ns_backend: NsBackend::RnNoise,
             strength: 0.0,
+            clean_incoming: false,
         })
         .unwrap();
         assert_eq!(pipeline.algorithmic_latency_samples(), 0);
@@ -381,6 +404,7 @@ mod tests {
             aec_enabled: false,
             ns_backend: NsBackend::DeepFilterNet3,
             strength: 1.0,
+            clean_incoming: false,
         })
         .unwrap();
         let delay = pipeline.algorithmic_latency_samples();
@@ -401,6 +425,7 @@ mod tests {
             aec_enabled: true,
             ns_backend: NsBackend::Off,
             strength: 0.0,
+            clean_incoming: false,
         })
         .unwrap();
         let seconds = 3;

@@ -117,6 +117,10 @@ protected:
     BOOLEAN                     m_bEoSReceived;
     BOOLEAN                     m_bLastBufferRendered;
     KSPIN_LOCK                  m_PositionSpinLock;
+    float                       m_HushCaptureHold;
+    double                      m_HushCapturePhase;
+    double                      m_HushRenderPhase;
+    BOOLEAN                     m_HushCapturePrimed;
     // Member variable as config params for tone generator
     ULONG                       m_ulHostCaptureToneFrequency;
     // If abs(m_dwHostCaptureToneAmplitude) + abs(m_dwHostCaptureToneDCValue) > 100

@@ -14,7 +14,9 @@
 
 #include <stdint.h>
 
-#ifdef _WIN32
+#if defined(_NTDDK_) || defined(_WDMDDK_)
+/* Kernel builds already have CTL_CODE from devioctl.h. */
+#elif defined(_WIN32)
 #include <winioctl.h>
 #else
 #define FILE_DEVICE_UNKNOWN 0x00000022

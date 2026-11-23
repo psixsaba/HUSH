@@ -13,6 +13,7 @@ use serde::Serialize;
 use crate::constants::{FRAME_SAMPLES, SAMPLE_RATE};
 use crate::devices::{self, DeviceLists};
 use crate::error::{Error, Result};
+use crate::ns::NoiseSuppressor;
 use crate::pipeline::{Pipeline, PipelineConfig};
 use crate::resample::SincResampler;
 use crate::ring::{RingAttachment, RingPublisher};
@@ -63,6 +64,9 @@ pub struct SessionStats {
     pub strength: f32,
     pub aec_enabled: bool,
     pub enabled: bool,
+    pub clean_incoming: bool,
+    pub incoming_latency_samples: u32,
+    pub incoming_latency_ms: f64,
     pub error: Option<String>,
 }
 
@@ -79,6 +83,7 @@ struct Shared {
     process_ns: AtomicU64,
     cpu_bits: AtomicU32,
     latency_samples: AtomicU32,
+    incoming_latency: AtomicU32,
     buffer_samples: AtomicU32,
     input_drops: AtomicU64,
     output_underruns: AtomicU64,
@@ -122,6 +127,7 @@ impl RealtimeSession {
             process_ns: AtomicU64::new(0),
             cpu_bits: AtomicU32::new(0),
             latency_samples: AtomicU32::new(0),
+            incoming_latency: AtomicU32::new(0),
             buffer_samples: AtomicU32::new(0),
             input_drops: AtomicU64::new(0),
             output_underruns: AtomicU64::new(0),
@@ -228,6 +234,7 @@ impl RealtimeSession {
     pub fn stats(&self) -> SessionStats {
         let config = self.shared.config.lock().unwrap().clone();
         let latency = self.shared.latency_samples.load(Ordering::Relaxed);
+        let incoming = self.shared.incoming_latency.load(Ordering::Relaxed);
         let buffer = self.shared.buffer_samples.load(Ordering::Relaxed);
         let cpu_bits = self.shared.cpu_bits.load(Ordering::Relaxed);
         SessionStats {
@@ -247,6 +254,9 @@ impl RealtimeSession {
             strength: config.strength,
             aec_enabled: config.aec_enabled,
             enabled: config.enabled,
+            clean_incoming: config.clean_incoming,
+            incoming_latency_samples: incoming,
+            incoming_latency_ms: incoming as f64 / SAMPLE_RATE as f64 * 1000.0,
             error: self.shared.error.lock().unwrap().clone(),
         }
     }
@@ -265,6 +275,41 @@ impl Drop for RealtimeSession {
     fn drop(&mut self) {
         self.stop();
     }
+}
+
+fn load_incoming(config: &PipelineConfig, bridge_speaker: bool) -> Result<Option<NoiseSuppressor>> {
+    if !bridge_speaker || !config.clean_incoming || config.ns_backend == NsBackend::Off {
+        return Ok(None);
+    }
+    Ok(Some(NoiseSuppressor::new(config.ns_backend, config.strength)?))
+}
+
+fn sync_incoming(
+    slot: &mut Option<NoiseSuppressor>,
+    loaded: &mut NsBackend,
+    config: &PipelineConfig,
+    bridge_speaker: bool,
+) -> Result<()> {
+    if !bridge_speaker || !config.clean_incoming || config.ns_backend == NsBackend::Off {
+        *slot = None;
+        return Ok(());
+    }
+    if slot.is_none() || *loaded != config.ns_backend {
+        *slot = Some(NoiseSuppressor::new(config.ns_backend, config.strength)?);
+        *loaded = config.ns_backend;
+    } else if let Some(suppressor) = slot.as_mut() {
+        suppressor.set_strength(config.strength);
+    }
+    Ok(())
+}
+
+fn publish_incoming_latency(shared: &Shared, config: &PipelineConfig, incoming: Option<&NoiseSuppressor>) {
+    let samples = if config.enabled && config.clean_incoming && config.strength > 0.0 {
+        incoming.map(NoiseSuppressor::latency_samples).unwrap_or(0)
+    } else {
+        0
+    };
+    shared.incoming_latency.store(samples, Ordering::Relaxed);
 }
 
 fn fail(shared: &Shared, message: String) {
@@ -313,6 +358,16 @@ fn worker(
         None
     };
 
+    let mut incoming_backend = config.ns_backend;
+    let mut incoming = match load_incoming(&config, bridge_speaker) {
+        Ok(suppressor) => suppressor,
+        Err(err) => {
+            fail(&shared, err.to_string());
+            return;
+        }
+    };
+    publish_incoming_latency(&shared, &config, incoming.as_ref());
+
     shared.ready.store(true, Ordering::Release);
 
     let mut input_resampler = (input_rate != SAMPLE_RATE)
@@ -333,6 +388,7 @@ fn worker(
     let mut far_frame = vec![0.0f32; FRAME_SAMPLES];
     let mut out_frame = vec![0.0f32; FRAME_SAMPLES];
     let mut speaker_frame = vec![0.0f32; FRAME_SAMPLES];
+    let mut cleaned_speaker = vec![0.0f32; FRAME_SAMPLES];
 
     let speaker_owner = if bridge_speaker {
         match RingPublisher::create_named(crate::ring::SPEAKER_NAME) {
@@ -379,6 +435,10 @@ fn worker(
                     if let Err(err) = pipeline.set_config(config.clone()) {
                         *shared.error.lock().unwrap() = Some(err.to_string());
                     }
+                    if let Err(err) = sync_incoming(&mut incoming, &mut incoming_backend, &config, bridge_speaker) {
+                        *shared.error.lock().unwrap() = Some(err.to_string());
+                    }
+                    publish_incoming_latency(&shared, &config, incoming.as_ref());
                     *shared.config.lock().unwrap() = config.clone();
                 }
             }
@@ -430,6 +490,16 @@ fn worker(
             } else {
                 false
             };
+            if speaker_live && config.enabled && config.clean_incoming && config.strength > 0.0 {
+                if let Some(suppressor) = incoming.as_mut() {
+                    match suppressor.process(&speaker_frame, &mut cleaned_speaker) {
+                        Ok(()) => speaker_frame.copy_from_slice(&cleaned_speaker),
+                        Err(err) => {
+                            *shared.error.lock().unwrap() = Some(err.to_string());
+                        }
+                    }
+                }
+            }
             let far_ref = if has_far {
                 if far_48k.len() >= FRAME_SAMPLES {
                     far_frame.copy_from_slice(&far_48k[..FRAME_SAMPLES]);

@@ -6,19 +6,15 @@ The Rust core is the same crate as on macOS. On Windows the ring is a named file
 
 `Virtual-Audio-Driver/` in this directory is a vendored copy of [VirtualDrivers/Virtual-Audio-Driver](https://github.com/VirtualDrivers/Virtual-Audio-Driver) (MIT, copyright MikeTheTech). Microsoft's SysVAD sample (MS-PL) is the reference for a minimal WaveRT endpoint. Do not copy a GPL virtual cable into this tree.
 
-`CMiniportWaveRTStream::WriteBytes` in `Source/Main/minwavertstream.cpp` is the capture path. It currently writes silence into the DMA buffer on purpose: a kernel miniport in session 0 cannot reliably map the user-mode section `Local\hush-krisp-alt-mic`. The app publishes that section from `native/ring/ring.c`. The bridge is the IOCTL pair in `../ioctl.h`: a user-mode service reads the ring and `HUSH_IOCTL_WRITE_CAPTURE`s the next 480 float samples into the DMA buffer. `ReadBytes` is the render path and should `HUSH_IOCTL_READ_RENDER` back out to `Local\hush-krisp-alt-spk`.
+`CMiniportWaveRTStream::WriteBytes` reads the capture queue filled by `HUSH_IOCTL_WRITE_CAPTURE` and converts it to the stream format (48 kHz is one-to-one; other rates are a zero-order hold). `ReadBytes` converts render audio back to 48 kHz mono float and queues it for `HUSH_IOCTL_READ_RENDER`. The control device is `\Device\HushVad`, opened from user mode as `\\.\HushVad`. Its DACL allows the logged-in user, the same trust as the shared-memory ring.
 
-This tree was not compiled. GitHub-hosted `windows-latest` images do not include the Windows Driver Kit, so CI builds the Rust app and skips the `.sys`.
+`hush service` is that user-mode helper. It has to run in the interactive session, not as LocalSystem, because the rings are `Local\` mappings. The Tauri app starts the same loop on Windows. It reads Krisp Alt Microphone and writes the virtual mic, and it writes Krisp Alt Speaker from the virtual speaker. The desktop app still owns the neural net: it cleans the mic before the ring, and it cleans the speaker after the ring.
 
-The integration point is the driver's cyclic buffer:
+CI runs `drivers/windows/ci-build.ps1` on `windows-latest`. The script tries Chocolatey `windowsdriverkit11`, then winget. If the kit is still absent it exits 0. If the kit is present, `msbuild` of `VirtualAudioDriver.sln` (Release, x64, `SignMode=Off`) must succeed. This Linux tree cannot compile the driver.
 
-1. The capture endpoint (what Zoom opens as a microphone) should read mono 48 kHz float from `Local\hush-krisp-alt-mic`, convert to the endpoint's format, and duplicate to stereo. That is the same read the macOS plugin does with `hush_ring_read`.
-2. The render endpoint (what Zoom opens as a speaker) should average each stereo frame to mono and `hush_ring_write` it into `Local\hush-krisp-alt-spk`.
-3. A kernel driver in session 0 cannot always open a `Local\` mapping created by the logged-in user. If `OpenFileMapping` fails from the driver, switch the contract to an IOCTL pair and keep the ring in user mode:
-   - `HUSH_IOCTL_READ_MIC` returns the next captured frames to the app? No: the app is the producer of the mic. The service writes mic frames into the driver with `HUSH_IOCTL_WRITE_CAPTURE`, and reads speaker frames with `HUSH_IOCTL_READ_RENDER`.
-   - Definitions live in `ioctl.h` in this directory.
+The helper is the only process that calls `DeviceIoControl`. The app publishes the rings. `ioctl.h` is the contract shared with `crates/hush-core/src/winbridge.rs`: device type `0x8000`, `WRITE_CAPTURE` function `0x800`, `READ_RENDER` function `0x801`, `METHOD_BUFFERED`, 480 mono floats at 48 kHz.
 
-`fetch.ps1` clones the Virtual Audio Driver at a pinned commit so the build does not float. Apply the buffer change in that tree. Do not vendor its full source into this repository until the patch builds, so a WDK update does not fork an unread driver.
+The driver sources are vendored. `fetch.ps1` is the record of the upstream commit, not a step you need to run again.
 
 ## Test signing
 
@@ -35,7 +31,7 @@ New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=Hush Test" -CertSto
 signtool sign /fd SHA256 /a /f HushTest.pfx /p <password> HushVirtualAudio.sys
 ```
 
-Install the test certificate into `Trusted Root` and `Trusted Publishers` on that machine. `devcon install` or `pnputil /add-driver HushVirtualAudio.inf /install` loads the package only while test signing is on. Turn it off when you are done: `bcdedit /set testsigning off`.
+Install the test certificate into `Trusted Root` and `Trusted Publishers` on that machine. `pnputil /add-driver VirtualAudioDriver.inf /install` loads the package only while test signing is on. Then start Hush, or run `hush service` in the same session, and point the call app at the virtual endpoints. Turn test signing off when you are done: `bcdedit /set testsigning off`.
 
 Secure Boot must be off for test signing, or the firmware will reject the test certificate. That is a development machine setting, not a shipping setting.
 

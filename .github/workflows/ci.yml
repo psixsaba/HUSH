@@ -27,17 +27,13 @@ jobs:
       - name: Windows desktop shell
         if: runner.os == 'Windows'
         run: cargo build -p hush-cli -p hush-desktop --release
-      - name: Windows driver, when the WDK is installed
-        if: runner.os == 'Windows'
+  windows-driver:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the WDK if possible and compile the driver
         shell: pwsh
-        run: |
-          $kit = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -ErrorAction SilentlyContinue
-          if (-not $kit) {
-            Write-Host "WDK is not on this hosted image. The vendored driver is not compiled here."
-            exit 0
-          }
-          Write-Host "WDK found:"
-          $kit | Select-Object -ExpandProperty FullName
+        run: drivers/windows/ci-build.ps1
 
   macos-driver:
     runs-on: macos-latest

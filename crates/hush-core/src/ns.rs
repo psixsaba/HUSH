@@ -12,12 +12,16 @@ use crate::error::{Error, Result};
 #[serde(rename_all = "snake_case")]
 pub enum NsBackend {
     Off,
-    /// DPDFNet8 at 48 kHz. Highest quality of the three on real speech when its frame time fits.
+    /// DPDFNet8 at 48 kHz. Highest quality on VoiceBank when its frame time fits.
     DpdfNet,
-    /// DeepFilterNet3 on tract, with the post-filter. Full-band, 30 ms delay.
+    /// DPDFNet2 at 48 kHz. Same 20 ms window and the same 50 ms frame delay as DPDFNet8.
+    DpdfNet2,
+    /// DeepFilterNet3 on tract. Full-band, 30 ms delay, lower VoiceBank quality.
     DeepFilterNet3,
     /// RNNoise via nnnoiseless. One 10 ms hop of overlap-add delay.
     RnNoise,
+    /// Named so the setting round-trips. No permissive realtime weights exist.
+    TargetSpeaker,
 }
 
 impl NsBackend {
@@ -25,8 +29,10 @@ impl NsBackend {
         match self {
             NsBackend::Off => "off",
             NsBackend::DpdfNet => "dpdfnet",
+            NsBackend::DpdfNet2 => "dpdfnet2",
             NsBackend::DeepFilterNet3 => "deepfilter",
             NsBackend::RnNoise => "rnnoise",
+            NsBackend::TargetSpeaker => "target_speaker",
         }
     }
 
@@ -35,9 +41,11 @@ impl NsBackend {
             "off" | "none" => Ok(NsBackend::Off),
             "df" | "df3" | "deepfilter" | "deepfilternet3" => Ok(NsBackend::DeepFilterNet3),
             "dpdf" | "dpdfnet" | "dpdfnet8" => Ok(NsBackend::DpdfNet),
+            "dpdf2" | "dpdfnet2" => Ok(NsBackend::DpdfNet2),
             "rnn" | "rnnoise" => Ok(NsBackend::RnNoise),
+            "target" | "target_speaker" | "other_voice" => Ok(NsBackend::TargetSpeaker),
             other => Err(Error::msg(format!(
-                "unknown noise suppressor '{other}', expected dpdfnet, deepfilter, rnnoise, or off"
+                "unknown noise suppressor '{other}', expected dpdfnet, dpdfnet2, deepfilter, rnnoise, target_speaker, or off"
             ))),
         }
     }
@@ -102,7 +110,13 @@ impl NoiseSuppressor {
             NsBackend::Off => Stage::Off,
             NsBackend::DeepFilterNet3 => Stage::DeepFilter(DfStage::load()?),
             NsBackend::DpdfNet => Stage::Dpdf(DpdfNet::load()?),
+            NsBackend::DpdfNet2 => Stage::Dpdf(DpdfNet::load_named("dpdfnet2_48khz_hr")?),
             NsBackend::RnNoise => Stage::RnNoise(RnnStage::new()),
+            NsBackend::TargetSpeaker => {
+                return Err(Error::msg(
+                    "other-voice removal is not shipped. No permissive realtime model cleared the license check. See docs/TARGET_SPEAKER.md.",
+                ));
+            }
         };
         let mut suppressor = Self { stage, strength };
         suppressor.apply_strength();

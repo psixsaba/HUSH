@@ -29,6 +29,8 @@ enum Command {
     Run(RunArgs),
     /// Clean every WAV in a directory with one loaded model.
     Batch(BatchArgs),
+    /// Shuttle the virtual microphone and speaker through the Windows driver IOCTL.
+    Service,
 }
 
 #[derive(Parser)]
@@ -88,16 +90,23 @@ struct RunArgs {
     /// Publish the virtual-speaker segment and play it (plus optional monitor) to --output.
     #[arg(long, default_value_t = false)]
     bridge: bool,
+    /// Clean Krisp Alt Speaker before playback and use that signal as the echo reference.
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    clean_incoming: bool,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
 enum NsChoice {
     #[value(name = "dpdfnet", alias = "dpdf")]
     DpdfNet,
+    #[value(name = "dpdfnet2", alias = "dpdf2")]
+    DpdfNet2,
     #[value(name = "deepfilter", alias = "df")]
     DeepFilter,
     #[value(name = "rnnoise", alias = "rnn")]
     RnNoise,
+    #[value(name = "target-speaker", alias = "target")]
+    TargetSpeaker,
     Off,
 }
 
@@ -105,8 +114,10 @@ impl NsChoice {
     fn backend(self) -> NsBackend {
         match self {
             NsChoice::DpdfNet => NsBackend::DpdfNet,
+            NsChoice::DpdfNet2 => NsBackend::DpdfNet2,
             NsChoice::DeepFilter => NsBackend::DeepFilterNet3,
             NsChoice::RnNoise => NsBackend::RnNoise,
+            NsChoice::TargetSpeaker => NsBackend::TargetSpeaker,
             NsChoice::Off => NsBackend::Off,
         }
     }
@@ -118,6 +129,27 @@ fn main() -> ExitCode {
         Command::Clean(args) => clean(args),
         Command::Run(args) => run(args),
         Command::Batch(args) => batch(args),
+        Command::Service => service(),
+    }
+}
+
+fn service() -> ExitCode {
+    #[cfg(windows)]
+    {
+        let stop = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&stop);
+        let _ = ctrlc::set_handler(move || flag.store(true, Ordering::SeqCst));
+        println!("hush service: feeding \\\\.\\HushVad from the user-session rings");
+        if let Err(err) = hush_core::run_windows_bridge(&stop) {
+            eprintln!("hush: {err}");
+            return ExitCode::from(1);
+        }
+        return ExitCode::SUCCESS;
+    }
+    #[cfg(not(windows))]
+    {
+        eprintln!("hush service feeds the Windows virtual driver and only runs on Windows");
+        ExitCode::from(2)
     }
 }
 
@@ -166,6 +198,7 @@ fn clean(args: CleanArgs) -> ExitCode {
             aec_enabled: args.aec && far.is_some(),
             ns_backend: args.ns.backend(),
             strength: args.strength,
+            clean_incoming: false,
         })?;
         let processed = pipeline.process_buffer(&near, far.as_deref())?;
         write_wav_mono(&args.output, &processed.samples, SAMPLE_RATE)?;
@@ -216,6 +249,7 @@ fn batch(args: BatchArgs) -> ExitCode {
             aec_enabled: false,
             ns_backend: args.ns.backend(),
             strength: args.strength,
+            clean_incoming: false,
         })?;
         let mut cpu = Vec::new();
         for path in &names {
@@ -259,6 +293,7 @@ fn run(args: RunArgs) -> ExitCode {
             aec_enabled: args.aec,
             ns_backend: args.ns.backend(),
             strength: args.strength,
+            clean_incoming: args.clean_incoming,
         },
         publish_ring: args.ring,
         bridge_speaker: args.bridge,

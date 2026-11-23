@@ -31,6 +31,7 @@ struct UiSettings {
     ns_backend: NsBackend,
     strength: f32,
     monitor_cleaned: bool,
+    clean_incoming: bool,
 }
 
 fn blank_to_none(value: Option<String>) -> Option<String> {
@@ -55,6 +56,7 @@ fn session_config(settings: &UiSettings) -> SessionConfig {
             aec_enabled: settings.aec_enabled,
             ns_backend: settings.ns_backend,
             strength: settings.strength,
+            clean_incoming: settings.clean_incoming,
         },
         publish_ring: true,
         bridge_speaker: true,
@@ -157,6 +159,12 @@ fn session_stats(state: tauri::State<AppState>) -> Result<Option<SessionStats>, 
 }
 
 pub fn run() {
+    #[cfg(windows)]
+    std::thread::spawn(|| {
+        let stop = std::sync::atomic::AtomicBool::new(false);
+        let _ = hush_core::run_windows_bridge(&stop);
+    });
+
     tauri::Builder::default()
         .manage(AppState {
             worker: Mutex::new(None),

@@ -36,6 +36,9 @@ const emptyStats: SessionStats = {
   strength: 1,
   aec_enabled: true,
   enabled: false,
+  clean_incoming: true,
+  incoming_latency_samples: 0,
+  incoming_latency_ms: 0,
   error: null,
 };
 
@@ -55,6 +58,7 @@ export function App() {
     ns_backend: "dpdf_net",
     strength: 1,
     monitor_cleaned: false,
+    clean_incoming: true,
   });
 
   useEffect(() => {
@@ -118,8 +122,8 @@ export function App() {
           <p className="text-xs uppercase tracking-[0.22em] text-[#c47a3a]">Hush</p>
           <h1 className="mt-2 font-serif text-4xl text-[#efe6da]">The mic your call actually hears.</h1>
           <p className="mt-3 max-w-xl text-[#efe6da]/70">
-            Echo cancellation, then DeepFilterNet3. Point Zoom, Meet, Discord, or Teams at Krisp Alt Microphone.
-            Krisp Alt Speaker is the far end, played back on the device you pick below.
+            Echo cancellation, then DPDFNet8. Point Zoom, Meet, Discord, or Teams at Krisp Alt Microphone.
+            Krisp Alt Speaker is cleaned, played on the device you pick below, and used as the echo reference.
           </p>
           {!connected && (
             <p className="mt-3 text-sm text-[#e2c16b]">
@@ -148,6 +152,31 @@ export function App() {
             allowEmpty
             onChange={(far_device) => void apply({ ...settings, far_device: far_device || null })}
           />
+          <div className="space-y-2">
+            <Label>Suppressor</Label>
+            <Select
+              value={settings.ns_backend}
+              onValueChange={(ns_backend) => void apply({ ...settings, ns_backend: ns_backend as NsBackend })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" className="max-h-80">
+                <SelectItem value="dpdf_net">DPDFNet8, 50 ms</SelectItem>
+                <SelectItem value="dpdf_net2">DPDFNet2, same 50 ms</SelectItem>
+                <SelectItem value="deep_filter_net3">DeepFilterNet3, 30 ms</SelectItem>
+                <SelectItem value="rn_noise">RNNoise, 10 ms</SelectItem>
+                <SelectItem value="target_speaker">Other voices, experimental</SelectItem>
+                <SelectItem value="off">Off</SelectItem>
+              </SelectContent>
+            </Select>
+            {settings.ns_backend === "target_speaker" && (
+              <p className="text-xs text-[#e2c16b]">
+                Not shipped. No permissive realtime weights passed the license check. The training plan is in
+                docs/TARGET_SPEAKER.md.
+              </p>
+            )}
+          </div>
           <div className="flex items-center justify-between gap-4">
             <div>
               <Label>Mute</Label>
@@ -174,6 +203,18 @@ export function App() {
           </div>
           <div className="flex items-center justify-between gap-4">
             <div>
+              <Label>Clean incoming audio</Label>
+              <p className="text-xs text-[#efe6da]/50">
+                Krisp Alt Speaker is denoised before it reaches your headphones. That cleaned signal is the echo reference.
+              </p>
+            </div>
+            <Switch
+              checked={settings.clean_incoming}
+              onCheckedChange={(clean_incoming) => void apply({ ...settings, clean_incoming })}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <div>
               <Label>Sidetone</Label>
               <p className="text-xs text-[#efe6da]/50">A little of your cleaned voice in the speakers.</p>
             </div>
@@ -181,23 +222,6 @@ export function App() {
               checked={settings.monitor_cleaned}
               onCheckedChange={(monitor_cleaned) => void apply({ ...settings, monitor_cleaned })}
             />
-          </div>
-          <div className="space-y-2">
-            <Label>Suppressor</Label>
-            <Select
-              value={settings.ns_backend}
-              onValueChange={(ns_backend) => void apply({ ...settings, ns_backend: ns_backend as NsBackend })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="dpdf_net">DPDFNet8</SelectItem>
-                <SelectItem value="deep_filter_net3">DeepFilterNet3</SelectItem>
-                <SelectItem value="rn_noise">RNNoise, low CPU</SelectItem>
-                <SelectItem value="off">Off</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -225,7 +249,8 @@ export function App() {
           <p className="mt-3 font-serif text-5xl tabular-nums">{meter.cpu_percent.toFixed(1)}%</p>
           <p className="text-sm text-[#efe6da]/60">of one core, {meter.process_ns / 1e6} ms of processing</p>
           <dl className="mt-6 space-y-3 text-sm">
-            <Row label="Model delay" value={`${meter.algorithmic_latency_ms.toFixed(1)} ms`} />
+            <Row label="Mic delay" value={`${meter.algorithmic_latency_ms.toFixed(1)} ms`} />
+            <Row label="Incoming delay" value={`${meter.incoming_latency_ms.toFixed(1)} ms`} />
             <Row label="Buffer" value={`${meter.buffer_ms.toFixed(1)} ms`} />
             <Row label="Frames" value={String(meter.frames)} />
             <Row label="Mic underruns" value={String(meter.ring_underruns)} />

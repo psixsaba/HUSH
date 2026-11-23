@@ -1,4 +1,4 @@
-export type NsBackend = "off" | "dpdf_net" | "deep_filter_net3" | "rn_noise";
+export type NsBackend = "off" | "dpdf_net" | "dpdf_net2" | "deep_filter_net3" | "rn_noise" | "target_speaker";
 
 export interface DeviceLists {
   inputs: string[];
@@ -22,6 +22,9 @@ export interface SessionStats {
   strength: number;
   aec_enabled: boolean;
   enabled: boolean;
+  clean_incoming: boolean;
+  incoming_latency_samples: number;
+  incoming_latency_ms: number;
   error: string | null;
 }
 
@@ -35,6 +38,7 @@ export interface Settings {
   ns_backend: NsBackend;
   strength: number;
   monitor_cleaned: boolean;
+  clean_incoming: boolean;
 }
 
 const previewDevices: DeviceLists = {

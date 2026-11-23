@@ -34,7 +34,10 @@ export const SelectContent = React.forwardRef<
   <SelectPrimitive.Portal>
     <SelectPrimitive.Content
       ref={ref}
-      className={cn("z-50 overflow-hidden rounded-2xl border border-white/10 bg-[#221c17] text-[#efe6da] shadow-xl", className)}
+      className={cn(
+        "z-50 max-h-80 overflow-y-auto rounded-2xl border border-white/10 bg-[#221c17] text-[#efe6da] shadow-xl",
+        className,
+      )}
       {...props}
     >
       <SelectPrimitive.Viewport className="p-1">{children}</SelectPrimitive.Viewport>

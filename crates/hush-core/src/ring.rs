@@ -136,6 +136,15 @@ impl RingAttachment {
     pub fn resyncs(&self) -> u64 {
         unsafe { hush_ring_resyncs(self.raw) }
     }
+
+    /// Write samples into a segment this process did not create.
+    /// The macOS plugin does the same for Krisp Alt Speaker.
+    pub fn write(&self, samples: &[f32]) {
+        if samples.is_empty() {
+            return;
+        }
+        unsafe { hush_ring_write(self.raw, samples.as_ptr(), samples.len() as u32) };
+    }
 }
 
 impl Drop for RingAttachment {

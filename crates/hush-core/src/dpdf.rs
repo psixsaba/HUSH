@@ -1,11 +1,12 @@
-//! Per-frame DPDFNet8 48 kHz streaming.
+//! Per-frame DPDFNet 48 kHz streaming.
 //!
 //! The graph is the Apache-2.0 ONNX export: one Vorbis-windowed STFT frame in,
 //! the enhanced frame and the RNN state out. ONNX Runtime runs it. The window,
 //! hop, and overlap-add match `dpdfnet.stream.StreamEnhancer` (causal, 50% overlap).
+//! DPDFNet2 and DPDFNet8 at 48 kHz share that STFT. They differ in the RNN state.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use ndarray::{Array1, Array4, ArrayViewD};
 use ort::session::Session;
@@ -18,7 +19,8 @@ use crate::error::{Error, Result};
 const WIN: usize = 960;
 const HOP: usize = 480;
 const BINS: usize = 481;
-const STATE_LEN: usize = 90_228;
+const DPDFNET8: &str = "dpdfnet8_48khz_hr";
+const DPDFNET2: &str = "dpdfnet2_48khz_hr";
 
 pub struct DpdfNet {
     /// Kept alive for the ONNX Runtime environment the session was created with.
@@ -38,11 +40,13 @@ pub struct DpdfNet {
 
 impl DpdfNet {
     pub fn load() -> Result<Self> {
-        let path = model_path()?;
-        let env = ort::init()
-            .with_name("hush")
-            .build()
-            .map_err(|err| Error::msg(err.to_string()))?;
+        Self::load_named(DPDFNET8)
+    }
+
+    /// `dpdfnet2_48khz_hr` or `dpdfnet8_48khz_hr`. Both are the 960/480 STFT.
+    pub fn load_named(stem: &str) -> Result<Self> {
+        let path = model_path(stem)?;
+        let env = shared_environment()?;
         let mut builder = Session::builder(&env).map_err(|err| Error::msg(err.to_string()))?;
         builder = builder
             .with_intra_threads(1)
@@ -50,6 +54,12 @@ impl DpdfNet {
         let session = builder
             .commit_from_file(&path)
             .map_err(|err| Error::msg(format!("DPDFNet session: {err}")))?;
+        let bins = spec_bins(&session)?;
+        if bins != BINS {
+            return Err(Error::msg(format!(
+                "{stem} has {bins} frequency bins. Only the 48 kHz exports ({BINS} bins, 20 ms window) run in this pipeline."
+            )));
+        }
         let state = initial_state(&session)?;
         let mut planner = RealFftPlanner::<f32>::new();
         let forward = planner.plan_fft_forward(WIN);
@@ -131,13 +141,16 @@ impl DpdfNet {
         Ok(())
     }
 
-    /// Causal 20 ms window (one hop of buffering) plus the four-hop lookahead
-    /// the 48 kHz graph was trained with (`center=True` in the exporter).
-    /// Measured against VoiceBank clean speech: 2400 samples, 50 ms.
+    /// Speech delay of this frame API against clean VoiceBank audio.
+    ///
+    /// The Python stream's group delay is 40 ms, and its first returned hop
+    /// arrives after one 20 ms window. This API emits a frame every 10 ms,
+    /// including the 10 ms spent filling that window, so the aligned delay is
+    /// 50 ms. Prefilling the window with zeros was measured and did not remove
+    /// the extra hop. DPDFNet2 and DPDFNet8, at 16 kHz and at 48 kHz, share it.
     pub fn latency_samples() -> u32 {
         5 * HOP as u32
     }
-
 }
 
 fn copy_enhanced(view: &ArrayViewD<f32>, spectrum: &mut [Complex<f32>]) {
@@ -164,37 +177,90 @@ fn vorbis_window() -> [f32; WIN] {
     window
 }
 
-fn model_path() -> Result<PathBuf> {
-    if let Ok(path) = std::env::var("HUSH_DPDF_ONNX") {
+fn shared_environment() -> Result<ort::environment::Environment> {
+    static ENV: OnceLock<ort::environment::Environment> = OnceLock::new();
+    if let Some(env) = ENV.get() {
+        return Ok(env.clone());
+    }
+    match ort::init().with_name("hush").build() {
+        Ok(env) => {
+            let _ = ENV.set(env.clone());
+            Ok(env)
+        }
+        Err(err) => ENV.get().cloned().ok_or_else(|| Error::msg(err.to_string())),
+    }
+}
+
+fn model_path(stem: &str) -> Result<PathBuf> {
+    let override_var = if stem == DPDFNET2 {
+        "HUSH_DPDF_ONNX_2"
+    } else {
+        "HUSH_DPDF_ONNX"
+    };
+    if let Ok(path) = std::env::var(override_var) {
         let path = PathBuf::from(path);
         if path.is_file() {
             return Ok(path);
         }
         return Err(Error::msg(format!(
-            "HUSH_DPDF_ONNX does not point at a file: {}",
+            "{override_var} does not point at a file: {}",
             path.display()
         )));
     }
+    let file_name = format!("{stem}.onnx");
     let mut candidates = Vec::new();
     if let Ok(cache) = std::env::var("XDG_CACHE_HOME") {
-        candidates.push(PathBuf::from(cache).join("dpdfnet/models/dpdfnet8_48khz_hr.onnx"));
+        candidates.push(PathBuf::from(cache).join("dpdfnet/models").join(&file_name));
     }
     if let Ok(home) = std::env::var("HOME") {
-        candidates.push(PathBuf::from(home).join(".cache/dpdfnet/models/dpdfnet8_48khz_hr.onnx"));
+        candidates.push(
+            PathBuf::from(home)
+                .join(".cache/dpdfnet/models")
+                .join(&file_name),
+        );
     }
-    candidates.push(PathBuf::from("bench/.cache/dpdfnet8_48khz_hr.onnx"));
+    candidates.push(PathBuf::from("bench/.cache").join(&file_name));
     for path in &candidates {
         if path.is_file() {
             return Ok(path.clone());
         }
     }
-    Err(Error::msg(
-        "DPDFNet8 48 kHz ONNX was not found. Download it with `dpdfnet download dpdfnet8_48khz_hr` or set HUSH_DPDF_ONNX.",
-    ))
+    Err(Error::msg(format!(
+        "{stem} was not found. Download it with `dpdfnet download {stem}` or set {override_var}."
+    )))
+}
+
+fn spec_bins(session: &Session) -> Result<usize> {
+    let input = session
+        .inputs()
+        .iter()
+        .find(|input| input.name() == "spec")
+        .ok_or_else(|| Error::msg("DPDFNet graph has no spec input"))?;
+    let ort::value::ValueType::Tensor { shape, .. } = input.dtype() else {
+        return Err(Error::msg("DPDFNet spec input is not a tensor"));
+    };
+    let dims: Vec<i64> = shape.iter().copied().collect();
+    let bins = dims.get(2).copied().unwrap_or(-1);
+    if bins <= 0 {
+        return Err(Error::msg("DPDFNet spec input has a dynamic frequency axis"));
+    }
+    Ok(bins as usize)
 }
 
 fn initial_state(session: &Session) -> Result<Array1<f32>> {
-    let mut state = Array1::zeros(STATE_LEN);
+    let input = session
+        .inputs()
+        .iter()
+        .find(|input| input.name() == "state_in")
+        .ok_or_else(|| Error::msg("DPDFNet graph has no state_in"))?;
+    let ort::value::ValueType::Tensor { shape, .. } = input.dtype() else {
+        return Err(Error::msg("DPDFNet state_in is not a tensor"));
+    };
+    let len = shape.num_elements();
+    if len == 0 {
+        return Err(Error::msg("DPDFNet state length is zero"));
+    }
+    let mut state = Array1::zeros(len);
     let metadata = session.metadata().map_err(|err| Error::msg(err.to_string()))?;
     let erb_n = metadata
         .custom("erb_norm_state_size")
@@ -219,8 +285,14 @@ fn fill_csv(state: &mut Array1<f32>, offset: usize, text: &str) {
     }
 }
 
-pub fn model_file_exists() -> bool {
-    model_path().is_ok()
+#[cfg(test)]
+fn model_file_exists() -> bool {
+    model_path(DPDFNET8).is_ok()
+}
+
+#[cfg(test)]
+fn model2_file_exists() -> bool {
+    model_path(DPDFNET2).is_ok()
 }
 
 #[cfg(test)]
@@ -254,9 +326,51 @@ mod tests {
         times.sort_unstable();
         let p95 = times[times.len() * 95 / 100];
         eprintln!(
-            "dpdfnet hop p50 {} us p95 {} us",
+            "dpdfnet8 hop p50 {} us p95 {} us",
             times[times.len() / 2] / 1000,
             p95 / 1000
+        );
+        assert_eq!(DpdfNet::latency_samples(), 2400);
+    }
+
+    #[test]
+    fn two_sessions_share_one_runtime() {
+        if !model_file_exists() {
+            eprintln!("skipping second DPDFNet session; model file is not cached");
+            return;
+        }
+        let mut first = DpdfNet::load().unwrap();
+        let mut second = DpdfNet::load().unwrap();
+        let frame = [0.1f32; HOP];
+        let mut out = [0.0f32; HOP];
+        first.process_hop(&frame, &mut out).unwrap();
+        second.process_hop(&frame, &mut out).unwrap();
+        assert!(out.iter().all(|sample| sample.is_finite()));
+    }
+
+    #[test]
+    fn dpdfnet2_hop_is_finite() {
+        if !model2_file_exists() {
+            eprintln!("skipping DPDFNet2; model file is not cached");
+            return;
+        }
+        let mut net = DpdfNet::load_named("dpdfnet2_48khz_hr").unwrap();
+        let mut out = [0.0f32; HOP];
+        let mut times = Vec::new();
+        for frame_index in 0..40 {
+            let frame = [0.05f32; HOP];
+            let started = Instant::now();
+            net.process_hop(&frame, &mut out).unwrap();
+            if frame_index > 5 {
+                times.push(started.elapsed().as_nanos() as u64);
+            }
+        }
+        assert!(out.iter().all(|sample| sample.is_finite()));
+        times.sort_unstable();
+        eprintln!(
+            "dpdfnet2 hop p50 {} us p95 {} us",
+            times[times.len() / 2] / 1000,
+            times[times.len() * 95 / 100] / 1000
         );
     }
 }

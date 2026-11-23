@@ -4,6 +4,7 @@
 #include "endpoints.h"
 #include "minwavert.h"
 #include "minwavertstream.h"
+#include "hush_bridge.h"
 #define MINWAVERTSTREAM_POOLTAG 'SRWM'
 
 #pragma warning (disable : 4127)
@@ -225,6 +226,10 @@ Return Value:
     m_ulLastOsWritePacket = ULONG_MAX;
     m_IsCurrentWritePositionUpdated = 0;
     m_SignalProcessingMode = SignalProcessingMode;
+    m_HushCaptureHold = 0.0f;
+    m_HushCapturePhase = 0.0;
+    m_HushRenderPhase = 0.0;
+    m_HushCapturePrimed = FALSE;
     m_bEoSReceived = FALSE;
     m_bLastBufferRendered = FALSE;
 
@@ -1406,20 +1411,81 @@ ByteDisplacement - # of bytes to process.
 --*/
 {
     ULONG bufferOffset = m_ullLinearPosition % m_ulDmaBufferSize;
+    ULONG block = (m_pWfExt != NULL) ? m_pWfExt->Format.nBlockAlign : 0;
+    ULONG channels = (m_pWfExt != NULL && m_pWfExt->Format.nChannels > 0) ? m_pWfExt->Format.nChannels : 1;
+    ULONG bits = (m_pWfExt != NULL) ? m_pWfExt->Format.wBitsPerSample : 0;
+    ULONG rate = (m_pWfExt != NULL && m_pWfExt->Format.nSamplesPerSec > 0) ? m_pWfExt->Format.nSamplesPerSec : 48000;
+    BOOLEAN isFloat = FALSE;
+    double step = 48000.0 / (double)rate;
 
-    // Normally this will loop no more than once for a single wrap, but if
-    // many bytes have been displaced then this may loops many times.
+    if (m_pWfExt != NULL &&
+        (m_pWfExt->Format.wFormatTag == WAVE_FORMAT_IEEE_FLOAT ||
+         (m_pWfExt->Format.wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
+          IsEqualGUIDAligned(m_pWfExt->SubFormat, KSDATAFORMAT_SUBTYPE_IEEE_FLOAT))))
+    {
+        isFloat = TRUE;
+    }
+
     while (ByteDisplacement > 0)
     {
         ULONG runWrite = min(ByteDisplacement, m_ulDmaBufferSize - bufferOffset);
-        
-        // Hush capture: the app publishes cleaned mono float32 in the
-        // Local\\hush-krisp-alt-mic section (see native/ring/ring.c).
-        // A miniport cannot reliably map that user section from session 0,
-        // so the bytes stay silent until a user-mode IOCTL (drivers/windows/ioctl.h)
-        // copies the ring into this DMA buffer. Do not put a tone here.
-        RtlZeroMemory(m_pDmaBuffer + bufferOffset, runWrite);
-           	
+        BYTE* cursor = m_pDmaBuffer + bufferOffset;
+        ULONG frames = (block > 0) ? (runWrite / block) : 0;
+        ULONG whole = frames * block;
+        ULONG frame;
+
+        if (whole < runWrite)
+        {
+            RtlZeroMemory(cursor + whole, runWrite - whole);
+        }
+        for (frame = 0; frame < frames; frame++)
+        {
+            float sample = 0.0f;
+            ULONG channel;
+            m_HushCapturePhase += step;
+            while (m_HushCapturePhase >= 1.0)
+            {
+                HushCapturePop(&sample);
+                m_HushCaptureHold = sample;
+                m_HushCapturePhase -= 1.0;
+                m_HushCapturePrimed = TRUE;
+            }
+            if (m_HushCapturePrimed)
+            {
+                sample = m_HushCaptureHold;
+            }
+            if (sample > 1.0f) sample = 1.0f;
+            if (sample < -1.0f) sample = -1.0f;
+            for (channel = 0; channel < channels; channel++)
+            {
+                BYTE* slot = cursor + channel * (bits / 8);
+                if (isFloat && bits == 32)
+                {
+                    *(float*)slot = sample;
+                }
+                else if (bits == 16)
+                {
+                    *(SHORT*)slot = (SHORT)(sample * 32767.0f);
+                }
+                else if (bits == 24)
+                {
+                    int value = (int)(sample * 8388607.0f);
+                    slot[0] = (BYTE)(value & 0xff);
+                    slot[1] = (BYTE)((value >> 8) & 0xff);
+                    slot[2] = (BYTE)((value >> 16) & 0xff);
+                }
+                else if (bits == 32)
+                {
+                    *(LONG*)slot = (LONG)(sample * 2147483647.0f);
+                }
+                else if (bits / 8 > 0)
+                {
+                    RtlZeroMemory(slot, bits / 8);
+                }
+            }
+            cursor += block;
+        }
+
         bufferOffset = (bufferOffset + runWrite) % m_ulDmaBufferSize;
         ByteDisplacement -= runWrite;
     }
@@ -1444,13 +1510,65 @@ ByteDisplacement - # of bytes to process.
 --*/
 {
     ULONG bufferOffset = m_ullLinearPosition % m_ulDmaBufferSize;
+    ULONG block = (m_pWfExt != NULL) ? m_pWfExt->Format.nBlockAlign : 0;
+    ULONG channels = (m_pWfExt != NULL && m_pWfExt->Format.nChannels > 0) ? m_pWfExt->Format.nChannels : 1;
+    ULONG bits = (m_pWfExt != NULL) ? m_pWfExt->Format.wBitsPerSample : 0;
+    ULONG rate = (m_pWfExt != NULL && m_pWfExt->Format.nSamplesPerSec > 0) ? m_pWfExt->Format.nSamplesPerSec : 48000;
+    BOOLEAN isFloat = FALSE;
+    double produce = (rate > 0) ? (48000.0 / (double)rate) : 1.0;
 
-    // Normally this will loop no more than once for a single wrap, but if
-    // many bytes have been displaced then this may loops many times.
+    if (m_pWfExt != NULL &&
+        (m_pWfExt->Format.wFormatTag == WAVE_FORMAT_IEEE_FLOAT ||
+         (m_pWfExt->Format.wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
+          IsEqualGUIDAligned(m_pWfExt->SubFormat, KSDATAFORMAT_SUBTYPE_IEEE_FLOAT))))
+    {
+        isFloat = TRUE;
+    }
+
     while (ByteDisplacement > 0)
     {
         ULONG runWrite = min(ByteDisplacement, m_ulDmaBufferSize - bufferOffset);
-        m_SaveData.WriteData(m_pDmaBuffer + bufferOffset, runWrite);
+        BYTE* cursor = m_pDmaBuffer + bufferOffset;
+        ULONG frames = (block > 0) ? (runWrite / block) : 0;
+        ULONG frame;
+
+        m_SaveData.WriteData(cursor, runWrite);
+        for (frame = 0; frame < frames; frame++)
+        {
+            float sum = 0.0f;
+            ULONG channel;
+            for (channel = 0; channel < channels; channel++)
+            {
+                BYTE* slot = cursor + channel * (bits / 8);
+                float sample = 0.0f;
+                if (isFloat && bits == 32)
+                {
+                    sample = *(float*)slot;
+                }
+                else if (bits == 16)
+                {
+                    sample = ((float)*(SHORT*)slot) / 32768.0f;
+                }
+                else if (bits == 24)
+                {
+                    int value = (int)slot[0] | ((int)slot[1] << 8) | ((int)(signed char)slot[2] << 16);
+                    sample = ((float)value) / 8388608.0f;
+                }
+                else if (bits == 32)
+                {
+                    sample = ((float)*(LONG*)slot) / 2147483648.0f;
+                }
+                sum += sample;
+            }
+            sum /= (float)channels;
+            m_HushRenderPhase += produce;
+            while (m_HushRenderPhase >= 1.0)
+            {
+                HushRenderPush(&sum, 1);
+                m_HushRenderPhase -= 1.0;
+            }
+            cursor += block;
+        }
         bufferOffset = (bufferOffset + runWrite) % m_ulDmaBufferSize;
         ByteDisplacement -= runWrite;
     }

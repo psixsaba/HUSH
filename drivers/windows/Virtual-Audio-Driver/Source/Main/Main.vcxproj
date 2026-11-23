@@ -317,6 +317,7 @@
     <ClCompile Include="mintopo.cpp" />
     <ClCompile Include="minwavert.cpp" />
     <ClCompile Include="minwavertstream.cpp" />
+    <ClCompile Include="hush_bridge.cpp" />
     <ClCompile Include="newdelete.cpp" />
     <ResourceCompile Include="VirtualAudioDriver.rc" />
   </ItemGroup>

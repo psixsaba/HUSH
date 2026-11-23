@@ -22,6 +22,7 @@ Abstract:
 #include "definitions.h"
 #include "endpoints.h"
 #include "minipairs.h"
+#include "hush_bridge.h"
 
 typedef void (*fnPcDriverUnload) (PDRIVER_OBJECT);
 fnPcDriverUnload gPCDriverUnloadRoutine = NULL;
@@ -98,6 +99,7 @@ Environment:
     DPF(D_TERSE, ("[DriverUnload]"));
 
     ReleaseRegistryStringBuffer();
+    HushRemoveBridge();
 
     if (DriverObject == NULL)
     {
@@ -333,6 +335,12 @@ Return Value:
     IF_FAILED_ACTION_JUMP(
         ntStatus,
         DPF(D_ERROR, ("PcInitializeAdapterDriver failed, 0x%x", ntStatus)),
+        Done);
+
+    ntStatus = HushInstallBridge(DriverObject);
+    IF_FAILED_ACTION_JUMP(
+        ntStatus,
+        DPF(D_ERROR, ("HushInstallBridge failed, 0x%x", ntStatus)),
         Done);
 
     //

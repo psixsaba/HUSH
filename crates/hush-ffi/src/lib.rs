@@ -46,7 +46,8 @@ fn backend(code: c_int) -> Result<NsBackend, &'static str> {
         1 => Ok(NsBackend::DeepFilterNet3),
         2 => Ok(NsBackend::RnNoise),
         3 => Ok(NsBackend::DpdfNet),
-        _ => Err("ns_backend must be 0 (off), 1 (deepfilter), 2 (rnnoise), or 3 (dpdfnet)"),
+        4 => Ok(NsBackend::DpdfNet2),
+        _ => Err("ns_backend must be 0 (off), 1 (deepfilter), 2 (rnnoise), 3 (dpdfnet), or 4 (dpdfnet2)"),
     }
 }
 
@@ -57,6 +58,7 @@ fn config_from(raw: &HushConfig) -> Result<PipelineConfig, &'static str> {
         aec_enabled: raw.aec_enabled != 0,
         ns_backend: backend(raw.ns_backend)?,
         strength: raw.strength,
+        clean_incoming: false,
     })
 }
 

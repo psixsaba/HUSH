@@ -12,28 +12,45 @@ Echo cancellation runs before noise removal. AEC3 needs the unprocessed micropho
 
 AEC3's echo-path delay is not added to the transmitted latency. The capture frame it returns is aligned with the microphone frame. The latency figure reported by Hush is the noise suppressor's delay plus, in the live engine, the samples sitting in the input buffer.
 
-## DeepFilterNet3 is the shipping suppressor
+## DeepFilterNet3 stayed in the tree
+
+It is not the default. The VoiceBank table below is why.
 
 `deep-filter-rt` 0.2 runs DeepFilterNet3 on tract and embeds the weights. The crate and the weights are MIT or Apache-2.0. Upstream stated that explicitly in November 2026; the crate's NOTICE records the commit. Tract keeps the runtime free of ONNX Runtime and of libtorch.
 
 Suppression strength maps onto DeepFilterNet's attenuation limit: 0 bypasses the model and its delay, 1 is a 100 dB limit, which the model treats as unlimited. A dry/wet mix would need a second copy of the delayed microphone and would comb-filter if the delay were even one hop off. The model's own limit does not have that problem.
 
-RNNoise, through `nnnoiseless` (BSD-3-Clause), is the fallback when a machine cannot spend the DeepFilterNet budget. Its reported delay is one 10 ms hop, which is the overlap-add of its 20 ms window. Strength below 1 mixes that wet signal with a dry signal delayed by the same hop.
+RNNoise, through `nnnoiseless` (BSD-3-Clause), is the low-CPU fallback. Its reported delay is one 10 ms hop, which is the overlap-add of its 20 ms window. Strength below 1 mixes that wet signal with a dry signal delayed by the same hop.
 
 ## DPDFNet8 is the default
 
 The synthetic vowel clip is not a ranking. DeepFilterNet3's own delay test says the model suppresses tones. VoiceBank-DEMAND, all 824 test files, is the measurement that counts. PESQ below is wideband, computed locally, and is not shipped.
 
-| System | SI-SDR | STOI | PESQ | DNSMOS OVRL | p95 frame |
-| --- | ---: | ---: | ---: | ---: | --- |
-| Noisy | 8.39 dB | 0.921 | 1.97 | 2.68 | |
-| DPDFNet8 | 18.86 dB | 0.942 | 2.94 | 3.18 | 3.34 ms on a real file, 4.29 ms on a 300-hop probe |
-| RNNoise | 12.90 dB | 0.917 | 2.28 | 2.98 | 0.06 ms |
-| DeepFilterNet3, tract | 8.89 dB | 0.840 | 1.92 | 2.66 | 0.63 ms |
+| System | SI-SDR | STOI | PESQ | DNSMOS OVRL | Delay | p95 frame |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Noisy | 8.39 dB | 0.921 | 1.97 | 2.68 | | |
+| DPDFNet8 48 kHz | 18.86 dB | 0.942 | 2.94 | 3.18 | 50 ms | 3.2 ms on `p232_001`, 3.1 ms on a 300-hop probe |
+| DPDFNet2 48 kHz | 18.88 dB | 0.939 | 2.98 | 3.12 | 50 ms | 1.5 ms on the same file |
+| DPDFNet8 16 kHz | 18.59 dB | 0.922 | 2.59 | 3.20 | 40 ms group delay, not wired in | |
+| DPDFNet2 16 kHz | 18.38 dB | 0.920 | 2.58 | 3.20 | 40 ms group delay, not wired in | |
+| RNNoise | 12.90 dB | 0.917 | 2.28 | 2.98 | 10 ms | 0.06 ms |
+| DeepFilterNet3, tract | 8.89 dB | 0.840 | 1.92 | 2.66 | 30 ms | 0.63 ms |
 
-DPDFNet8 is inside the callback. ONNX Runtime (`ort` 2.0.0-rc.15, MIT or Apache-2.0) runs `dpdfnet8_48khz_hr.onnx`. The STFT is the causal Vorbis window from the Python `StreamEnhancer`: 960-sample window, 480-sample hop. The Rust stream matches that Python stream at correlation 1.000 on `p232_001`. The reported delay is 2400 samples (50 ms): one hop of buffering plus the four-hop lookahead the exporter documents for `center=True`. With the delay set to one hop, SI-SDR on that file was −34 dB and STOI was 0.39; PESQ, which aligns internally, still read 3.12. After the 50 ms shift, the same file is SI-SDR 22.4, STOI 0.917, PESQ 3.17.
+DPDFNet8 stays the default. DPDFNet2 matches it on SI-SDR and PESQ and is about half the CPU, and it gives up a little STOI, BAK, and DNSMOS OVRL (3.12 against 3.18). The rule for the default is the better speech result, so the heavier model stays. DPDFNet2 is the same-latency lighter setting. Two DPDFNet8 hops, microphone plus incoming audio, are about 6.4 ms of the 10 ms frame on this machine.
 
-The p95 hop is under 8 ms on this machine, so DPDFNet8 is the default. DeepFilterNet3 remains the lighter full-band option. RNNoise remains the low-CPU option.
+The 16 kHz exports are not a low-latency mode. Their group delay is the same 40 ms, and wideband PESQ drops by about 0.35 because the band above 8 kHz is gone. STOI falls to the noisy clip. The library lists `baseline`, `dpdfnet4`, and both 8 kHz exports at the same 20 ms frame. They were not scored: a shorter window is not on offer, and the 16 kHz models that were scored already missed DPDFNet8.
+
+ONNX Runtime (`ort` 2.0.0-rc.15, MIT or Apache-2.0) runs the 48 kHz graph. The STFT is the causal Vorbis window from the Python `StreamEnhancer`: 960-sample window, 480-sample hop. The Rust stream matches that Python stream at correlation 1.000 on `p232_001`. With the delay set to one hop, SI-SDR on that file was −34 dB and STOI was 0.39. After the 50 ms shift, the same file is SI-SDR 22.45, STOI 0.917, PESQ 3.17. DPDFNet2 on that file, same shift, is SI-SDR 22.49, STOI 0.914, PESQ 3.43.
+
+## There is no low-latency DPDFNet
+
+The target was 40 ms. Krisp is about 25 ms. The Python stream's own note says the first samples come back after one 20 ms window. That is when `process` stops returning an empty array. It is not when the speech lines up.
+
+On `p232_001`, the Python stream's group delay is 1920 samples, 40.0 ms, for `dpdfnet2_48khz_hr`, `dpdfnet8_48khz_hr`, `dpdfnet2`, and `dpdfnet8`. The 16 kHz hop is 160 samples, which is still 10 ms. Nothing in the registry advertises a shorter frame than 20 ms.
+
+This pipeline has to emit a frame every 10 ms. The first 10 ms is spent filling the 20 ms window, so the aligned delay is 2400 samples, 50 ms. Prefilling that window with zeros was measured. The residual lag stayed one hop, and SI-SDR on the file fell to −17 dB until the shift was put back to 50 ms. The reported delay stays 50 ms.
+
+DeepFilterNet3 is 30 ms and RNNoise is 10 ms. Neither is near DPDFNet8 on this set, so neither is offered as a low-latency mode that keeps the default quality. They remain selectable. The app labels show the delay next to the name.
 
 ## DeepFilterNet3 on tract does not match the published VoiceBank score
 
@@ -49,6 +66,16 @@ The tract model does remove noise: DNSMOS BAK rises from 3.11 to 3.82. SIG falls
 ## Why the cleaned file is shifted
 
 Offline cleaning flushes the model delay with zeros and then removes that many samples, so the WAV lines up with the input. The JSON still reports the delay that was removed. The benchmark may nudge alignment by up to 15 ms, because a denoiser smears onsets, and it records the lag it used.
+
+## Incoming audio
+
+Krisp Alt Speaker is cleaned with a second suppressor, the same backend as the microphone, then played to the hardware output. The echo reference is that cleaned buffer, because that is the signal that will come back through the room. The canceller is not given a second copy of the model delay. The playback itself is already delayed by the suppressor, and AEC3 estimates the acoustic path from there.
+
+The second DPDFNet session shares the one ONNX Runtime environment the process is allowed to create. A unit test loads two sessions. Turning processing off, or strength to 0, skips the incoming model and its delay. This path was not played through Core Audio here.
+
+## Other voices
+
+No permissive realtime model removes other speakers. WeSpeaker's embedding is Apache-2.0 and is not a separator. The published target-speaker checkpoints we looked at are trained on WSJ or published under a non-commercial grant. The setting exists so the choice is visible, and it refuses to start. The data recipe, the licenses, and the GPU estimate are in `docs/TARGET_SPEAKER.md`. `scripts/target_speaker/recipe.py` will not write a manifest for WSJ, LibriMix, WHAMR, AudioSet, or VoxCeleb.
 
 ## Virtual devices
 
@@ -75,9 +102,13 @@ Intel and Apple Silicon are one plugin. `HUSH_UNIVERSAL=1` passes both architect
 
 Tauri 2, React, TypeScript, Tailwind, and Radix primitives (the shadcn set: button, switch, slider, select, label, card). The window calls the same `RealtimeSession` as the CLI. The browser preview of the Vite app does not process audio; the controls are the real ones once the webview is up.
 
-## Windows, after macOS
+## Windows
 
-The core stays the same crate. The ring uses `CreateFileMapping` of `Local\hush-krisp-alt-mic` and `Local\hush-krisp-alt-spk` on Windows. The driver itself is not compiled here: there is no WDK on this machine. The intended base is the MIT/MS-PL Virtual Audio Driver project, with SysVAD (MS-PL) as the reference for a simple virtual endpoint. See `drivers/windows/README.md`. Test signing is documented there, and so is the production path: EV certificate, Partner Center attestation versus an HLK submission.
+The core stays the same crate. The rings are `Local\hush-krisp-alt-mic` and `Local\hush-krisp-alt-spk`. A kernel miniport in session 0 cannot open those, so `hush service` (and the Tauri app, on Windows) runs in the user session and feeds `\Device\HushVad` with the IOCTLs in `drivers/windows/ioctl.h`. The driver copies that queue into the capture DMA buffer and queues render audio back out. 48 kHz is one sample in, one sample out. Other rates are a zero-order hold.
+
+The NSIS and MSI packages are Tauri bundle targets. The NSIS hook tells the user the driver is a separate test-signed package. It does not load a `.sys`.
+
+None of that was executed here. There is no WDK on this machine, and CI's `drivers/windows/ci-build.ps1` is the attempt: Chocolatey `windowsdriverkit11`, then winget, and `msbuild` only if a kit appears. If the kit is missing the script exits 0 so the Rust tests stay green. If the kit is present, a compile error fails the job. Test signing and the attestation-versus-HLK choice are in `drivers/windows/README.md`.
 
 ## What was left out on license grounds
 

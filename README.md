@@ -1,8 +1,8 @@
 # Hush
 
-Real-time noise and echo cancellation for calls. The microphone path is WebRTC AEC3, then DeepFilterNet3, with RNNoise when you want the smaller CPU bill. A virtual microphone and a virtual speaker, both named for the call apps that will select them, sit on top of that core on macOS. Windows uses the same core. Its kernel driver is specified and not built here.
+Real-time noise and echo cancellation for calls. The microphone path is WebRTC AEC3, then DPDFNet8. DeepFilterNet3 and RNNoise stay available when you want less delay or less CPU. A virtual microphone and a virtual speaker, both named for the call apps that will select them, sit on top of that core on macOS. On Windows the same core feeds a virtual audio driver through a user-mode helper.
 
-The call app should use **Krisp Alt Microphone** and **Krisp Alt Speaker**. Hush has to be running. The speaker is how remote audio gets to your headphones, and it is the echo reference.
+The call app should use **Krisp Alt Microphone** and **Krisp Alt Speaker**. Hush has to be running. Incoming call audio is cleaned, played to your output device, and that cleaned signal is the echo reference.
 
 ## Layout
 
@@ -12,7 +12,7 @@ crates/hush-ffi      C API (include/hush.h)
 crates/hush-cli      hush clean, hush run, hush devices
 apps/desktop         Tauri 2 shell
 drivers/macos        libASPL AudioServerPlugIn
-drivers/windows      driver plan, IOCTLs, test-signing notes
+drivers/windows      virtual audio driver, IOCTL bridge, test-signing notes
 native/ring          the ring, one implementation, macOS and Windows
 bench                SI-SDR, STOI, DNSMOS P.835
 ```
@@ -34,9 +34,10 @@ The shipped code and weights are MIT, Apache-2.0, BSD-3-Clause, or MS-PL. Nothin
 | libASPL 3.1.2 | MIT | macOS AudioServerPlugIn |
 | Tauri 2, React, Radix | MIT OR Apache-2.0 | Desktop shell |
 | numpy, scipy, soundfile, pystoi, onnxruntime | BSD / MIT | Benchmark only |
-| DPDFNet and its weights | Apache-2.0 | Benchmark candidate, not in the audio callback |
+| DPDFNet and its ONNX weights | Apache-2.0 | Default noise removal. Downloaded, not committed |
+| ort (ONNX Runtime) | MIT OR Apache-2.0 | Runs DPDFNet |
 | DNSMOS P.835 model and scorer | MIT (Microsoft DNS Challenge) | Benchmark only, downloaded, not committed |
-| Virtual Audio Driver (when fetched) | MIT / MS-PL | Windows driver base |
+| Virtual Audio Driver | MIT / MS-PL | Windows driver, vendored |
 | SysVAD (not vendored) | MS-PL | Windows reference sample |
 | PESQ | ITU, not permissive | Do not add |
 
@@ -88,10 +89,13 @@ npm run tauri dev    # the shell, wired to the core
 
 ```powershell
 # Rust stable, Visual Studio Build Tools, Meson, Ninja.
-cargo build -p hush-cli --release
+cargo build -p hush-cli -p hush-desktop --release
+# NSIS and MSI, from apps/desktop, once the frontend has been built:
+npm install
+npm run tauri build
 ```
 
-The kernel driver is the next step on a machine with the WDK. [drivers/windows/README.md](drivers/windows/README.md) covers test signing and the production choice between Partner Center attestation and HLK.
+`hush service` copies the shared-memory rings through `\\.\HushVad`. The Tauri app starts that loop itself. The driver build, test signing, and why the helper has to run in the user session are in [drivers/windows/README.md](drivers/windows/README.md). CI tries to install the WDK and compile the `.sys`. This Linux tree did not.
 
 ## Use
 
@@ -103,7 +107,9 @@ hush run --ns rnnoise                 # live mic, prints one line per 10 ms fram
 hush run --bridge --output "Headphones"
 ```
 
-`--ns` is `dpdfnet` (default), `deepfilter`, `rnnoise`, or `off`. `--strength 0` skips the suppressor and its delay. Strength 1 is the model's full attenuation. The DPDFNet ONNX is not in git. `dpdfnet download dpdfnet8_48khz_hr` puts it in `~/.cache/dpdfnet/models/`, or set `HUSH_DPDF_ONNX`.
+`--ns` is `dpdfnet` (default), `dpdfnet2`, `deepfilter`, `rnnoise`, `target-speaker`, or `off`. `target-speaker` refuses to start. The training plan is [docs/TARGET_SPEAKER.md](docs/TARGET_SPEAKER.md). `--strength 0` skips the suppressor and its delay. Strength 1 is the model's full attenuation. `--clean-incoming true` (the default on `hush run`) denoises Krisp Alt Speaker before playback and uses that signal as the echo reference.
+
+The DPDFNet ONNX files are not in git. `dpdfnet download dpdfnet8_48khz_hr` and `dpdfnet download dpdfnet2_48khz_hr` put them in `~/.cache/dpdfnet/models/`. `HUSH_DPDF_ONNX` and `HUSH_DPDF_ONNX_2` override those paths.
 
 `hush run` prints processing time and CPU for each frame. CPU is that time divided by the 10 ms frame.
 
@@ -128,24 +134,28 @@ On a Mac:
 - `HUSH_UNIVERSAL=1 drivers/macos/build.sh` produces `KrispAltMicrophone.driver`.
 - After install, `system_profiler SPAudioDataType` should list Krisp Alt Microphone and Krisp Alt Speaker.
 - Start Hush, select the pair in a call, and confirm the other side hears the cleaned mic and you hear them.
-- Re-measure CPU on Apple Silicon. The shipping model stays DeepFilterNet3 until that number, and a DPDFNet comparison in-process, say otherwise. The budget used here is a p95 frame under 8 ms.
+- Re-measure CPU on Apple Silicon. The default here is DPDFNet8. The budget used on this machine is a p95 frame under 8 ms. One hop was 3.2 ms.
 
 On a PC:
 
-- Build the core with the MSVC toolchain.
-- Build the virtual driver from the fetched sample with the WDK, test-sign it, and confirm the two endpoints enumerate.
+- Build the core with the MSVC toolchain. `npm run tauri build` in `apps/desktop` produces the NSIS and MSI packages.
+- `drivers/windows/ci-build.ps1` installs the WDK when it can and compiles `VirtualAudioDriver.sln`. It was not run here.
+- Test-sign the driver, install it, run Hush in the same session, and confirm the two endpoints enumerate. The steps are in `drivers/windows/README.md`.
 - Attestation signing needs an EV certificate and a Partner Center account. HLK is separate and was not run.
 
-VoiceBank-DEMAND test set, all 824 files, 48 kHz, release build on this machine. The WAVs are not in git. PESQ is wideband at 16 kHz and is an internal number only. DNSMOS is P.835.
+VoiceBank-DEMAND test set, all 824 files, 48 kHz. The WAVs are not in git. PESQ is wideband at 16 kHz and is an internal number only. DNSMOS is P.835. DPDFNet2 and the 16 kHz rows were scored with the Python causal stream, aligned by the measured lag. DPDFNet8, RNNoise, and DeepFilterNet3 are the Rust pipeline. On `p232_001` the Rust DPDFNet8 stream matches that Python stream at correlation 1.000, and Rust DPDFNet2 at the same 50 ms shift is SI-SDR 22.49.
 
 | System | SI-SDR | STOI | PESQ | SIG | BAK | OVRL | Frame cost |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | Noisy | 8.39 dB | 0.921 | 1.97 | 3.32 | 3.11 | 2.68 | |
-| DPDFNet8 | 18.86 dB | 0.942 | 2.94 | 3.40 | 4.12 | 3.18 | 3.3 ms p95, 50 ms delay |
+| DPDFNet8 48 kHz | 18.86 dB | 0.942 | 2.94 | 3.40 | 4.12 | 3.18 | 3.2 ms p95, 50 ms delay |
+| DPDFNet2 48 kHz | 18.88 dB | 0.939 | 2.98 | 3.38 | 4.05 | 3.12 | 1.5 ms p95, same 50 ms |
+| DPDFNet8 16 kHz | 18.59 dB | 0.922 | 2.59 | 3.42 | 4.14 | 3.20 | 40 ms group delay, not shipped |
+| DPDFNet2 16 kHz | 18.38 dB | 0.920 | 2.58 | 3.42 | 4.14 | 3.20 | 40 ms group delay, not shipped |
 | RNNoise | 12.90 dB | 0.917 | 2.28 | 3.33 | 3.83 | 2.98 | 0.06 ms p95, 10 ms delay |
 | DeepFilterNet3 (tract) | 8.89 dB | 0.840 | 1.92 | 2.95 | 3.82 | 2.66 | 0.63 ms p95, 30 ms delay |
 
-DPDFNet8 is the default. Its p95 hop on a VoiceBank file is 3.34 ms, and a 300-hop release probe peaked at 4.29 ms, both under the 8 ms budget. The Rust stream matches the Python causal enhancer at correlation 1.000 on `p232_001`. DeepFilterNet3 stays available as the lighter neural option. On this tract export it does not reproduce the published VoiceBank PESQ of about 3.17 and STOI of about 0.944: delay and sample rate check out, and turning the post-filter off does not close the gap. RNNoise is the low-CPU path, and on this set it beats that DeepFilterNet3 export.
+DPDFNet8 stays the default. DPDFNet2 is the same delay at about half the CPU and a slightly lower DNSMOS score, so it is a setting, not the default, and not a low-latency mode. No export in the library has a window shorter than 20 ms. The first Python hop really does come back after that window, and the speech is still 40 ms behind. Our frame API adds the 10 ms spent filling the window, which is the 50 ms we report. Prefilling the window did not remove it. DeepFilterNet3 at 30 ms and RNNoise at 10 ms are the shorter delays, and neither stays near DPDFNet8 on this set. Incoming cleaning runs a second copy of the selected model. Two DPDFNet8 hops are about 6.4 ms on this machine.
 
 The DNS Challenge blind set was not scored. The official archives are multi-gigabyte and are not in the git repository. A synthetic-vowel clip is still generated by `bench/make_examples.py` for a smoke test. Those STOI and SIG numbers are not a model ranking.
 
