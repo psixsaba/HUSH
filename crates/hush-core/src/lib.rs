@@ -7,6 +7,7 @@
 //! and its delay.
 
 mod aec;
+mod dpdf;
 mod constants;
 mod devices;
 mod error;

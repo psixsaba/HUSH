@@ -24,6 +24,20 @@ jobs:
         env:
           CARGO_BUILD_JOBS: 2
         run: cargo test -p hush-core -p hush-ffi -p hush-cli --release -- --test-threads=8
+      - name: Windows desktop shell
+        if: runner.os == 'Windows'
+        run: cargo build -p hush-cli -p hush-desktop --release
+      - name: Windows driver, when the WDK is installed
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $kit = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -ErrorAction SilentlyContinue
+          if (-not $kit) {
+            Write-Host "WDK is not on this hosted image. The vendored driver is not compiled here."
+            exit 0
+          }
+          Write-Host "WDK found:"
+          $kit | Select-Object -ExpandProperty FullName
 
   macos-driver:
     runs-on: macos-latest

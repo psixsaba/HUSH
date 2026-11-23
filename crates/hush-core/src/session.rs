@@ -463,6 +463,7 @@ fn worker(
                         .buffer_samples
                         .store(buffered as u32, Ordering::Relaxed);
                     if let Some(publisher) = publisher.as_ref() {
+                        publisher.set_muted(config.muted);
                         publisher.set_latency_samples(frame_stats.algorithmic_latency_samples);
                         publisher.write(&out_frame);
                     }

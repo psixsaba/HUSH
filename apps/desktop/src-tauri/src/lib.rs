@@ -26,6 +26,7 @@ struct UiSettings {
     output_device: Option<String>,
     far_device: Option<String>,
     enabled: bool,
+    muted: bool,
     aec_enabled: bool,
     ns_backend: NsBackend,
     strength: f32,
@@ -50,6 +51,7 @@ fn session_config(settings: &UiSettings) -> SessionConfig {
         far_device: blank_to_none(settings.far_device.clone()),
         pipeline: PipelineConfig {
             enabled: settings.enabled,
+            muted: settings.muted,
             aec_enabled: settings.aec_enabled,
             ns_backend: settings.ns_backend,
             strength: settings.strength,

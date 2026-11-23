@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -26,6 +27,23 @@ enum Command {
     Clean(CleanArgs),
     /// Process a live microphone. Prints one line per 10 ms frame.
     Run(RunArgs),
+    /// Clean every WAV in a directory with one loaded model.
+    Batch(BatchArgs),
+}
+
+#[derive(Parser)]
+struct BatchArgs {
+    #[arg(long)]
+    input_dir: PathBuf,
+    #[arg(long)]
+    output_dir: PathBuf,
+    #[arg(long, value_enum, default_value_t = NsChoice::DpdfNet)]
+    ns: NsChoice,
+    #[arg(long, default_value_t = 1.0)]
+    strength: f32,
+    /// Stop after this many files. Zero means all of them.
+    #[arg(long, default_value_t = 0)]
+    limit: usize,
 }
 
 #[derive(Parser)]
@@ -37,7 +55,7 @@ struct CleanArgs {
     /// Far-end reference. Required for echo cancellation to do anything.
     #[arg(long)]
     far: Option<PathBuf>,
-    #[arg(long, value_enum, default_value_t = NsChoice::DeepFilter)]
+    #[arg(long, value_enum, default_value_t = NsChoice::DpdfNet)]
     ns: NsChoice,
     #[arg(long, default_value_t = false)]
     aec: bool,
@@ -58,7 +76,7 @@ struct RunArgs {
     /// Loopback or reference device for echo cancellation.
     #[arg(long)]
     far_device: Option<String>,
-    #[arg(long, value_enum, default_value_t = NsChoice::DeepFilter)]
+    #[arg(long, value_enum, default_value_t = NsChoice::DpdfNet)]
     ns: NsChoice,
     #[arg(long, default_value_t = false)]
     aec: bool,
@@ -74,6 +92,8 @@ struct RunArgs {
 
 #[derive(Clone, Copy, ValueEnum)]
 enum NsChoice {
+    #[value(name = "dpdfnet", alias = "dpdf")]
+    DpdfNet,
     #[value(name = "deepfilter", alias = "df")]
     DeepFilter,
     #[value(name = "rnnoise", alias = "rnn")]
@@ -84,6 +104,7 @@ enum NsChoice {
 impl NsChoice {
     fn backend(self) -> NsBackend {
         match self {
+            NsChoice::DpdfNet => NsBackend::DpdfNet,
             NsChoice::DeepFilter => NsBackend::DeepFilterNet3,
             NsChoice::RnNoise => NsBackend::RnNoise,
             NsChoice::Off => NsBackend::Off,
@@ -96,6 +117,7 @@ fn main() -> ExitCode {
         Command::Devices => devices(),
         Command::Clean(args) => clean(args),
         Command::Run(args) => run(args),
+        Command::Batch(args) => batch(args),
     }
 }
 
@@ -140,6 +162,7 @@ fn clean(args: CleanArgs) -> ExitCode {
         }
         let mut pipeline = Pipeline::new(PipelineConfig {
             enabled: true,
+            muted: false,
             aec_enabled: args.aec && far.is_some(),
             ns_backend: args.ns.backend(),
             strength: args.strength,
@@ -171,6 +194,59 @@ fn clean(args: CleanArgs) -> ExitCode {
     }
 }
 
+fn batch(args: BatchArgs) -> ExitCode {
+    let result = (|| {
+        fs::create_dir_all(&args.output_dir)?;
+        let mut names: Vec<_> = fs::read_dir(&args.input_dir)?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("wav"))
+            })
+            .collect();
+        names.sort();
+        if args.limit > 0 {
+            names.truncate(args.limit);
+        }
+        let mut pipeline = Pipeline::new(PipelineConfig {
+            enabled: true,
+            muted: false,
+            aec_enabled: false,
+            ns_backend: args.ns.backend(),
+            strength: args.strength,
+        })?;
+        let mut cpu = Vec::new();
+        for path in &names {
+            let (audio, _) = read_wav_mono(path)?;
+            let processed = pipeline.process_buffer(&audio, None)?;
+            let dest = args.output_dir.join(path.file_name().unwrap_or_default());
+            write_wav_mono(&dest, &processed.samples, SAMPLE_RATE)?;
+            cpu.push(processed.stats.cpu_percent_p95);
+        }
+        cpu.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let p95 = if cpu.is_empty() {
+            0.0
+        } else {
+            cpu[(cpu.len() - 1) * 95 / 100.max(1)]
+        };
+        println!(
+            "batch {} files  ns {}  worst-file cpu p95 {p95:.2}%",
+            names.len(),
+            args.ns.backend().as_str()
+        );
+        Ok::<(), hush_core::Error>(())
+    })();
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("hush: {err}");
+            ExitCode::from(1)
+        }
+    }
+}
+
 fn run(args: RunArgs) -> ExitCode {
     let monitor_cleaned = args.output.is_some() && !args.bridge;
     let config = SessionConfig {
@@ -179,6 +255,7 @@ fn run(args: RunArgs) -> ExitCode {
         far_device: args.far_device,
         pipeline: PipelineConfig {
             enabled: true,
+            muted: false,
             aec_enabled: args.aec,
             ns_backend: args.ns.backend(),
             strength: args.strength,

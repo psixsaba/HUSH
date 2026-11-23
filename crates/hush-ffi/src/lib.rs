@@ -45,13 +45,15 @@ fn backend(code: c_int) -> Result<NsBackend, &'static str> {
         0 => Ok(NsBackend::Off),
         1 => Ok(NsBackend::DeepFilterNet3),
         2 => Ok(NsBackend::RnNoise),
-        _ => Err("ns_backend must be 0 (off), 1 (deepfilter), or 2 (rnnoise)"),
+        3 => Ok(NsBackend::DpdfNet),
+        _ => Err("ns_backend must be 0 (off), 1 (deepfilter), 2 (rnnoise), or 3 (dpdfnet)"),
     }
 }
 
 fn config_from(raw: &HushConfig) -> Result<PipelineConfig, &'static str> {
     Ok(PipelineConfig {
         enabled: raw.enabled != 0,
+        muted: false,
         aec_enabled: raw.aec_enabled != 0,
         ns_backend: backend(raw.ns_backend)?,
         strength: raw.strength,

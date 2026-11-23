@@ -15,15 +15,16 @@ Code and the DNSMOS P.835 scorer are MIT:
 - https://github.com/microsoft/DNS-Challenge
 - The harness downloads `DNSMOS/DNSMOS/sig_bak_ovr.onnx` into `bench/.cache/` on first use and does not commit it.
 
-The blind test sets and the synthesized training noise are distributed separately, often as multi-gigabyte archives linked from the repository README. Read that README for the current download and for the data terms before using the clips in a commercial comparison. Do not commit the archives.
+The blind test audio is not in that git repository. The official blobs are multi-gigabyte. This run did not download a slice: there is no small official subset that can be fetched without the full archive. VoiceBank-DEMAND is the real-speech result in the README. Do not commit a DNS archive if you download one later.
 
 ## VoiceBank-DEMAND
 
-The Valentini VoiceBank-DEMAND set (clean VCTK sentences mixed with DEMAND noise) is the usual wideband baseline:
+The Valentini VoiceBank-DEMAND set is CC BY 4.0 as distributed by the University of Edinburgh:
 
 - https://datashare.ed.ac.uk/handle/10283/2791
+- `clean_testset_wav.zip` and `noisy_testset_wav.zip`
 
-VCTK and DEMAND each have their own license. Check both before training or before publishing a commercial claim. A typical layout after download is `clean/` and `noisy/` WAVs at 48 kHz. Point a copy of the harness at those paths; do not add the files to git.
+The benchmark downloaded those two zips into `bench/.cache/voicebank/` and did not commit them. `bench/voicebank.py` scores all 824 test files. VCTK and DEMAND still have their own terms if you train on the training split. Do not commit the WAVs.
 
 ## PESQ
 

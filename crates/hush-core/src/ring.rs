@@ -58,6 +58,10 @@ impl RingPublisher {
         unsafe { hush_ring_set_active(self.raw, if active { 1 } else { 0 }) }
     }
 
+    pub fn set_muted(&self, muted: bool) {
+        unsafe { hush_ring_set_muted(self.raw, if muted { 1 } else { 0 }) }
+    }
+
     pub fn set_latency_samples(&self, samples: u32) {
         unsafe { hush_ring_set_latency(self.raw, samples) }
     }
@@ -180,6 +184,7 @@ extern "C" {
     fn hush_ring_attach_named(name: *const c_char) -> *mut HushRing;
     fn hush_ring_destroy(ring: *mut HushRing);
     fn hush_ring_set_active(ring: *mut HushRing, active: i32);
+    fn hush_ring_set_muted(ring: *mut HushRing, muted: i32);
     fn hush_ring_set_latency(ring: *mut HushRing, samples: u32);
     fn hush_ring_write(ring: *mut HushRing, src: *const f32, n: u32) -> u32;
     fn hush_ring_underruns(ring: *const HushRing) -> u64;

@@ -4,7 +4,11 @@ The Rust core is the same crate as on macOS. On Windows the ring is a named file
 
 ## Which sample to start from
 
-Use [VirtualDrivers/Virtual-Audio-Driver](https://github.com/VirtualDrivers/Virtual-Audio-Driver). It is MIT and MS-PL, and it is already a virtual cable with a user-mode service. Microsoft's SysVAD sample (MS-PL, in the Windows driver samples) is the reference for a minimal WaveRT endpoint if you would rather begin from the official sample. Do not copy a GPL virtual cable into this tree.
+`Virtual-Audio-Driver/` in this directory is a vendored copy of [VirtualDrivers/Virtual-Audio-Driver](https://github.com/VirtualDrivers/Virtual-Audio-Driver) (MIT, copyright MikeTheTech). Microsoft's SysVAD sample (MS-PL) is the reference for a minimal WaveRT endpoint. Do not copy a GPL virtual cable into this tree.
+
+`CMiniportWaveRTStream::WriteBytes` in `Source/Main/minwavertstream.cpp` is the capture path. It currently writes silence into the DMA buffer on purpose: a kernel miniport in session 0 cannot reliably map the user-mode section `Local\hush-krisp-alt-mic`. The app publishes that section from `native/ring/ring.c`. The bridge is the IOCTL pair in `../ioctl.h`: a user-mode service reads the ring and `HUSH_IOCTL_WRITE_CAPTURE`s the next 480 float samples into the DMA buffer. `ReadBytes` is the render path and should `HUSH_IOCTL_READ_RENDER` back out to `Local\hush-krisp-alt-spk`.
+
+This tree was not compiled. GitHub-hosted `windows-latest` images do not include the Windows Driver Kit, so CI builds the Rust app and skips the `.sys`.
 
 The integration point is the driver's cyclic buffer:
 

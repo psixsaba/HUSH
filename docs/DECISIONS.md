@@ -20,20 +20,31 @@ Suppression strength maps onto DeepFilterNet's attenuation limit: 0 bypasses the
 
 RNNoise, through `nnnoiseless` (BSD-3-Clause), is the fallback when a machine cannot spend the DeepFilterNet budget. Its reported delay is one 10 ms hop, which is the overlap-add of its 20 ms window. Strength below 1 mixes that wet signal with a dry signal delayed by the same hop.
 
-## DPDFNet scored higher here and is not the callback yet
+## DPDFNet8 is the default
 
-On the synthetic 10 s, 5 dB clip, measured in this Linux release build:
+The synthetic vowel clip is not a ranking. DeepFilterNet3's own delay test says the model suppresses tones. VoiceBank-DEMAND, all 824 test files, is the measurement that counts. PESQ below is wideband, computed locally, and is not shipped.
 
-| System | SI-SDR | STOI | DNSMOS OVRL | CPU |
-| --- | ---: | ---: | ---: | --- |
-| Noisy | 5.06 dB | 0.918 | 1.75 | |
-| DeepFilterNet3 | 10.44 dB | 0.824 | 1.63 | 4.2% mean, 6.1% p95, 30 ms |
-| RNNoise | 8.15 dB | 0.820 | 1.66 | 0.47% mean, 10 ms |
-| DPDFNet8 48 kHz | 10.71 dB | 0.841 | 2.40 | 6.3 s wall for 10 s audio, Python |
+| System | SI-SDR | STOI | PESQ | DNSMOS OVRL | p95 frame |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Noisy | 8.39 dB | 0.921 | 1.97 | 2.68 | |
+| DPDFNet8 | 18.86 dB | 0.942 | 2.94 | 3.18 | 3.34 ms on a real file, 4.29 ms on a 300-hop probe |
+| RNNoise | 12.90 dB | 0.917 | 2.28 | 2.98 | 0.06 ms |
+| DeepFilterNet3, tract | 8.89 dB | 0.840 | 1.92 | 2.66 | 0.63 ms |
 
-DPDFNet8 (Apache-2.0) is the better suppressor on this clip: higher SI-SDR, higher STOI, and a clearly higher DNSMOS OVRL, driven by SIG 2.72 versus DeepFilterNet3's 1.75. Both neural models lower STOI relative to the noisy mix. These are formant vowels, not VoiceBank, so STOI and DNSMOS SIG are harsher than they will be on real speech. DeepFilterNet3 does the noise job: BAK goes from 1.63 to 3.51.
+DPDFNet8 is inside the callback. ONNX Runtime (`ort` 2.0.0-rc.15, MIT or Apache-2.0) runs `dpdfnet8_48khz_hr.onnx`. The STFT is the causal Vorbis window from the Python `StreamEnhancer`: 960-sample window, 480-sample hop. The Rust stream matches that Python stream at correlation 1.000 on `p232_001`. The reported delay is 2400 samples (50 ms): one hop of buffering plus the four-hop lookahead the exporter documents for `center=True`. With the delay set to one hop, SI-SDR on that file was −34 dB and STOI was 0.39; PESQ, which aligns internally, still read 3.12. After the 50 ms shift, the same file is SI-SDR 22.4, STOI 0.917, PESQ 3.17.
 
-DPDFNet stays out of the audio callback. The 6.3 s figure is an offline Python process, including model load, not a p95 frame time, and there is no tract or ONNX streaming port of its STFT graph in this tree. A wrong port would be a worse product than a measured 0.58 ms p95. DeepFilterNet3 stays the shipping model because a frame with AEC and DeepFilterNet3 has p95 CPU of 7.2% and p95 time of 0.72 ms, under the 8 ms budget, on this machine. Noise removal alone is 0.61 ms at p95. Revisit DPDFNet on an Apple Silicon build that reports the same per-frame numbers. If that p95 is under 8 ms, it should replace DeepFilterNet3.
+The p95 hop is under 8 ms on this machine, so DPDFNet8 is the default. DeepFilterNet3 remains the lighter full-band option. RNNoise remains the low-CPU option.
+
+## DeepFilterNet3 on tract does not match the published VoiceBank score
+
+The published DeepFilterNet3 VoiceBank numbers are about PESQ 3.17 and STOI 0.944. This export, on the same 824 files, is PESQ 1.92 and STOI 0.840, essentially the noisy clip on PESQ and worse on STOI. What was checked:
+
+- Sample rate 48 kHz, hop 480, one channel. The loader rejects anything else.
+- Attenuation limit 100 dB, which the runtime treats as unlimited.
+- Post-filter beta 0.02 and post-filter off. One real clip scored PESQ 2.43 and 2.40. Neither approaches the paper.
+- Delay. The crate's own test measures 1440 samples on a vowel and our shift uses that. A lag search of the enhanced file against clean speech peaks at 0 after that shift, so the bad score is not a leftover delay.
+
+The tract model does remove noise: DNSMOS BAK rises from 3.11 to 3.82. SIG falls from 3.32 to 2.95, which is the speech damage. The PyTorch checkpoint that produced the paper number is not this ONNX. Until a tract export reproduces that number, DeepFilterNet3 is not the quality model.
 
 ## Why the cleaned file is shifted
 

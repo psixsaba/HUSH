@@ -32,7 +32,7 @@ const emptyStats: SessionStats = {
   ring_underruns: 0,
   output_underruns: 0,
   input_drops: 0,
-  ns_backend: "deep_filter_net3",
+  ns_backend: "dpdf_net",
   strength: 1,
   aec_enabled: true,
   enabled: false,
@@ -50,8 +50,9 @@ export function App() {
     output_device: null,
     far_device: null,
     enabled: true,
+    muted: false,
     aec_enabled: true,
-    ns_backend: "deep_filter_net3",
+    ns_backend: "dpdf_net",
     strength: 1,
     monitor_cleaned: false,
   });
@@ -149,6 +150,13 @@ export function App() {
           />
           <div className="flex items-center justify-between gap-4">
             <div>
+              <Label>Mute</Label>
+              <p className="text-xs text-[#efe6da]/50">The virtual microphone goes silent. The call still sees the device.</p>
+            </div>
+            <Switch checked={settings.muted} onCheckedChange={(muted) => void apply({ ...settings, muted })} />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <div>
               <Label>Processing</Label>
               <p className="text-xs text-[#efe6da]/50">Off is a straight wire. No model delay.</p>
             </div>
@@ -184,6 +192,7 @@ export function App() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="dpdf_net">DPDFNet8</SelectItem>
                 <SelectItem value="deep_filter_net3">DeepFilterNet3</SelectItem>
                 <SelectItem value="rn_noise">RNNoise, low CPU</SelectItem>
                 <SelectItem value="off">Off</SelectItem>

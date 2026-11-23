@@ -92,6 +92,9 @@ def ensure_dnsmos(cache: Path) -> Path | None:
     return path
 
 
+_DNSMOS_SESSIONS: dict[str, object] = {}
+
+
 def dnsmos_p835(audio: np.ndarray, sr: int, model: Path) -> dict[str, float]:
     import onnxruntime as ort
 
@@ -102,7 +105,11 @@ def dnsmos_p835(audio: np.ndarray, sr: int, model: Path) -> dict[str, float]:
     while len(audio) < need:
         audio = np.concatenate([audio, audio])
     hops = int(math.floor(len(audio) / sr) - INPUT_LENGTH) + 1
-    session = ort.InferenceSession(str(model), providers=["CPUExecutionProvider"])
+    key = str(model)
+    session = _DNSMOS_SESSIONS.get(key)
+    if session is None:
+        session = ort.InferenceSession(key, providers=["CPUExecutionProvider"])
+        _DNSMOS_SESSIONS[key] = session
     sigs, baks, ovrs = [], [], []
     for idx in range(max(hops, 1)):
         seg = audio[int(idx * sr) : int((idx + INPUT_LENGTH) * sr)]

@@ -251,7 +251,26 @@ void hush_ring_set_active(HushRing *ring, int active)
     if (!ring || !ring->shared) {
         return;
     }
-    uint32_t flags = active ? HUSH_RING_FLAG_ACTIVE : 0;
+    uint32_t flags = atomic_load_explicit(&ring->shared->flags, memory_order_relaxed);
+    if (active) {
+        flags |= HUSH_RING_FLAG_ACTIVE;
+    } else {
+        flags &= ~HUSH_RING_FLAG_ACTIVE;
+    }
+    atomic_store_explicit(&ring->shared->flags, flags, memory_order_release);
+}
+
+void hush_ring_set_muted(HushRing *ring, int muted)
+{
+    if (!ring || !ring->shared) {
+        return;
+    }
+    uint32_t flags = atomic_load_explicit(&ring->shared->flags, memory_order_relaxed);
+    if (muted) {
+        flags |= HUSH_RING_FLAG_MUTED;
+    } else {
+        flags &= ~HUSH_RING_FLAG_MUTED;
+    }
     atomic_store_explicit(&ring->shared->flags, flags, memory_order_release);
 }
 
@@ -392,6 +411,10 @@ uint32_t hush_ring_read(HushRingReader *reader, double timestamp_frames, float *
         return n;
     }
 
+    if ((flags & HUSH_RING_FLAG_MUTED) != 0) {
+        reader->anchored = 0;
+        return n;
+    }
     uint64_t jitter = (uint64_t)rate / 50ull; /* 20 ms */
     if (jitter > write) {
         jitter = write;
@@ -407,11 +430,16 @@ uint32_t hush_ring_read(HushRingReader *reader, double timestamp_frames, float *
     }
     uint64_t delta = (uint64_t)(timestamp_frames - reader->anchor_timestamp + 0.5);
     uint64_t start = reader->anchor_write + delta;
-    uint64_t max_lag = (uint64_t)rate / 4ull; /* 250 ms */
+    /* Hardware mic clock and the virtual-device clock drift. Jump only the
+       excess over a 40 ms cushion, and only once the lag passes 80 ms, so a
+       slow walk does not become a quarter-second skip. */
+    uint64_t max_lag = (uint64_t)rate / 12ull; /* ~83 ms */
     if (write > start && (write - start) > max_lag + (uint64_t)n) {
-        reader->anchor_timestamp = timestamp_frames;
-        reader->anchor_write = write - jitter;
-        start = reader->anchor_write;
+        uint64_t lag = write - start;
+        uint64_t cushion = (uint64_t)rate / 25ull; /* 40 ms */
+        uint64_t skip = lag > cushion ? lag - cushion : 0;
+        reader->anchor_write += skip;
+        start += skip;
         atomic_fetch_add_explicit(&s->resyncs, 1, memory_order_relaxed);
     }
 
@@ -444,7 +472,8 @@ uint32_t hush_ring_read_next(HushRingReader *reader, float *dst, uint32_t n)
     }
     HushRingShared *s = ring->shared;
     uint32_t flags = atomic_load_explicit(&s->flags, memory_order_acquire);
-    if (s->magic != HUSH_RING_MAGIC || (flags & HUSH_RING_FLAG_ACTIVE) == 0) {
+    if (s->magic != HUSH_RING_MAGIC || (flags & HUSH_RING_FLAG_ACTIVE) == 0
+        || (flags & HUSH_RING_FLAG_MUTED) != 0) {
         reader->seq_started = 0;
         return n;
     }
@@ -459,9 +488,13 @@ uint32_t hush_ring_read_next(HushRingReader *reader, float *dst, uint32_t n)
         reader->seq_started = 1;
         reader->read_count = write > jitter ? write - jitter : 0;
     }
-    uint64_t max_lag = (uint64_t)rate / 4ull;
+    uint64_t max_lag = (uint64_t)rate / 12ull;
     if (write > reader->read_count && (write - reader->read_count) > max_lag + n) {
-        reader->read_count = write > jitter ? write - jitter : 0;
+        uint64_t lag = write - reader->read_count;
+        uint64_t cushion = (uint64_t)rate / 25ull;
+        if (lag > cushion) {
+            reader->read_count += lag - cushion;
+        }
         atomic_fetch_add_explicit(&s->resyncs, 1, memory_order_relaxed);
     }
     uint32_t underruns = 0;

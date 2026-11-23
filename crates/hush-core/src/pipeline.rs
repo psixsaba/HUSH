@@ -13,6 +13,8 @@ use crate::ns::{NoiseSuppressor, NsBackend};
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct PipelineConfig {
     pub enabled: bool,
+    /// Virtual-microphone mute. The frame is silence and the ring flag is set.
+    pub muted: bool,
     pub aec_enabled: bool,
     pub ns_backend: NsBackend,
     pub strength: f32,
@@ -22,8 +24,9 @@ impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
             enabled: true,
+            muted: false,
             aec_enabled: false,
-            ns_backend: NsBackend::DeepFilterNet3,
+            ns_backend: NsBackend::DpdfNet,
             strength: 1.0,
         }
     }
@@ -134,6 +137,17 @@ impl Pipeline {
         far: Option<&[f32]>,
         out: &mut [f32],
     ) -> Result<FrameStats> {
+        if self.config.muted {
+            out.fill(0.0);
+            return Ok(FrameStats {
+                process_ns: 0,
+                cpu_percent: 0.0,
+                algorithmic_latency_samples: 0,
+                aec_applied: false,
+                ns_applied: false,
+                ns_backend: self.config.ns_backend,
+            });
+        }
         if near.len() != FRAME_SAMPLES || out.len() != FRAME_SAMPLES {
             return Err(Error::msg(format!(
                 "frames must be {FRAME_SAMPLES} samples at {SAMPLE_RATE} Hz"
@@ -281,6 +295,7 @@ mod tests {
     fn bypass_is_identity_and_reports_zero_latency() {
         let mut pipeline = Pipeline::new(PipelineConfig {
             enabled: true,
+            muted: false,
             aec_enabled: false,
             ns_backend: NsBackend::Off,
             strength: 1.0,
@@ -301,6 +316,7 @@ mod tests {
     fn disabled_pipeline_ignores_the_suppressor() {
         let mut pipeline = Pipeline::new(PipelineConfig {
             enabled: false,
+            muted: false,
             aec_enabled: false,
             ns_backend: NsBackend::RnNoise,
             strength: 1.0,
@@ -318,6 +334,7 @@ mod tests {
     fn rnnoise_frame_is_finite_and_delayed() {
         let mut pipeline = Pipeline::new(PipelineConfig {
             enabled: true,
+            muted: false,
             aec_enabled: false,
             ns_backend: NsBackend::RnNoise,
             strength: 1.0,
@@ -339,6 +356,7 @@ mod tests {
     fn zero_strength_skips_suppressor_latency() {
         let mut pipeline = Pipeline::new(PipelineConfig {
             enabled: true,
+            muted: false,
             aec_enabled: false,
             ns_backend: NsBackend::RnNoise,
             strength: 0.0,
@@ -359,6 +377,7 @@ mod tests {
     fn deepfilter_reports_model_delay_and_stays_finite() {
         let mut pipeline = Pipeline::new(PipelineConfig {
             enabled: true,
+            muted: false,
             aec_enabled: false,
             ns_backend: NsBackend::DeepFilterNet3,
             strength: 1.0,
@@ -378,6 +397,7 @@ mod tests {
     fn aec3_attenuates_a_pure_echo() {
         let mut pipeline = Pipeline::new(PipelineConfig {
             enabled: true,
+            muted: false,
             aec_enabled: true,
             ns_backend: NsBackend::Off,
             strength: 0.0,

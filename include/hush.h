@@ -12,7 +12,7 @@ extern "C" {
  * Single-threaded C API for the Hush 48 kHz pipeline.
  * One handle must not be used from two threads at once.
  *
- * ns_backend: 0 off, 1 DeepFilterNet3, 2 RNNoise.
+ * ns_backend: 0 off, 1 DeepFilterNet3, 2 RNNoise, 3 DPDFNet8.
  * strength: 0 skips noise suppression, 1 is the model's full attenuation.
  * Frames are mono float in [-1, 1], 480 samples (10 ms) at 48 kHz.
  * far may be NULL when echo cancellation has no reference.
@@ -21,7 +21,8 @@ extern "C" {
 enum {
     HUSH_NS_OFF = 0,
     HUSH_NS_DEEPFILTER = 1,
-    HUSH_NS_RNNOISE = 2
+    HUSH_NS_RNNOISE = 2,
+    HUSH_NS_DPDFNET = 3
 };
 
 enum {

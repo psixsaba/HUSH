@@ -36,6 +36,7 @@ extern "C" {
 #define HUSH_SHM_NAME "/hush-krisp-alt-mic"
 #define HUSH_SHM_SPEAKER "/hush-krisp-alt-spk"
 #define HUSH_RING_FLAG_ACTIVE 1u
+#define HUSH_RING_FLAG_MUTED 2u
 
 typedef struct HushRing HushRing;
 typedef struct HushRingReader HushRingReader;
@@ -52,6 +53,7 @@ HushRing *hush_ring_attach(void);
 void hush_ring_destroy(HushRing *ring);
 
 void hush_ring_set_active(HushRing *ring, int active);
+void hush_ring_set_muted(HushRing *ring, int muted);
 void hush_ring_set_latency(HushRing *ring, uint32_t samples);
 uint32_t hush_ring_latency(const HushRing *ring);
 uint32_t hush_ring_write(HushRing *ring, const float *src, uint32_t n);

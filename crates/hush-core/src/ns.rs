@@ -1,6 +1,8 @@
-use deep_filter_rt::tract::DfTract;
+use deep_filter_rt::tract::{DfParams, DfTract, RuntimeParams};
 use ndarray::Array2;
 use nnnoiseless::DenoiseState;
+
+use crate::dpdf::DpdfNet;
 
 use crate::constants::FRAME_SAMPLES;
 use crate::error::{Error, Result};
@@ -10,7 +12,9 @@ use crate::error::{Error, Result};
 #[serde(rename_all = "snake_case")]
 pub enum NsBackend {
     Off,
-    /// DeepFilterNet3 on tract. Full-band, about 30 ms of model delay.
+    /// DPDFNet8 at 48 kHz. Highest quality of the three on real speech when its frame time fits.
+    DpdfNet,
+    /// DeepFilterNet3 on tract, with the post-filter. Full-band, 30 ms delay.
     DeepFilterNet3,
     /// RNNoise via nnnoiseless. One 10 ms hop of overlap-add delay.
     RnNoise,
@@ -20,6 +24,7 @@ impl NsBackend {
     pub fn as_str(self) -> &'static str {
         match self {
             NsBackend::Off => "off",
+            NsBackend::DpdfNet => "dpdfnet",
             NsBackend::DeepFilterNet3 => "deepfilter",
             NsBackend::RnNoise => "rnnoise",
         }
@@ -29,9 +34,10 @@ impl NsBackend {
         match text {
             "off" | "none" => Ok(NsBackend::Off),
             "df" | "df3" | "deepfilter" | "deepfilternet3" => Ok(NsBackend::DeepFilterNet3),
+            "dpdf" | "dpdfnet" | "dpdfnet8" => Ok(NsBackend::DpdfNet),
             "rnn" | "rnnoise" => Ok(NsBackend::RnNoise),
             other => Err(Error::msg(format!(
-                "unknown noise suppressor '{other}', expected deepfilter, rnnoise, or off"
+                "unknown noise suppressor '{other}', expected dpdfnet, deepfilter, rnnoise, or off"
             ))),
         }
     }
@@ -49,6 +55,7 @@ pub struct NoiseSuppressor {
 enum Stage {
     Off,
     DeepFilter(DfStage),
+    Dpdf(DpdfNet),
     RnNoise(RnnStage),
 }
 
@@ -94,6 +101,7 @@ impl NoiseSuppressor {
         let stage = match backend {
             NsBackend::Off => Stage::Off,
             NsBackend::DeepFilterNet3 => Stage::DeepFilter(DfStage::load()?),
+            NsBackend::DpdfNet => Stage::Dpdf(DpdfNet::load()?),
             NsBackend::RnNoise => Stage::RnNoise(RnnStage::new()),
         };
         let mut suppressor = Self { stage, strength };
@@ -126,6 +134,7 @@ impl NoiseSuppressor {
         match &self.stage {
             Stage::Off => 0,
             Stage::DeepFilter(stage) => stage.delay,
+            Stage::Dpdf(_) => DpdfNet::latency_samples(),
             Stage::RnNoise(_) => RNNOISE_LATENCY_SAMPLES,
         }
     }
@@ -143,6 +152,7 @@ impl NoiseSuppressor {
         match &mut self.stage {
             Stage::Off => output.copy_from_slice(input),
             Stage::DeepFilter(stage) => stage.process(input, output)?,
+            Stage::Dpdf(stage) => stage.process_hop(input, output)?,
             Stage::RnNoise(stage) => stage.process(input, output, self.strength),
         }
         Ok(())
@@ -151,7 +161,11 @@ impl NoiseSuppressor {
 
 impl DfStage {
     fn load() -> Result<Self> {
-        let model = DfTract::default();
+        // Post-filter stays off. On VoiceBank it pulled PESQ below the noisy
+        // clip; the tract default (no post-filter, 100 dB attenuation limit)
+        // is the configuration that matches the published fullband model.
+        let model = DfTract::new(DfParams::default(), &RuntimeParams::default())
+            .map_err(|err| Error::msg(err.to_string()))?;
         if model.sr != 48_000 {
             return Err(Error::msg(format!(
                 "DeepFilterNet3 sample rate is {}, expected 48000",

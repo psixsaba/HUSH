@@ -1,4 +1,4 @@
-export type NsBackend = "off" | "deep_filter_net3" | "rn_noise";
+export type NsBackend = "off" | "dpdf_net" | "deep_filter_net3" | "rn_noise";
 
 export interface DeviceLists {
   inputs: string[];
@@ -30,6 +30,7 @@ export interface Settings {
   output_device: string | null;
   far_device: string | null;
   enabled: boolean;
+  muted: boolean;
   aec_enabled: boolean;
   ns_backend: NsBackend;
   strength: number;
