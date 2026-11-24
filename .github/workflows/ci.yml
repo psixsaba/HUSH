@@ -47,10 +47,13 @@ jobs:
         run: cargo test -p hush-core -p hush-ffi -p hush-cli --release -- --test-threads=8
       - name: Windows desktop shell
         if: runner.os == 'Windows'
-        shell: bash
+        # Git bash puts its usr\bin\link.exe ahead of MSVC link.exe, and Meson
+        # then refuses to configure WebRTC. PowerShell keeps the MSVC path
+        # written by use-msvc.ps1.
+        shell: pwsh
         run: |
-          mkdir -p apps/desktop/dist
-          printf '%s\n' '<!doctype html><title>HUSH</title>' > apps/desktop/dist/index.html
+          New-Item -ItemType Directory -Force -Path apps/desktop/dist | Out-Null
+          Set-Content -Path apps/desktop/dist/index.html -Value '<!doctype html><title>HUSH</title>' -Encoding ascii
           cargo build -p hush-cli -p hush-desktop --release
   macos-driver:
     runs-on: macos-latest
