@@ -1,0 +1,15 @@
+# Third-party notices
+
+HUSH itself is MIT OR Apache-2.0. See `LICENSE`. Nothing GPL is shipped. The pieces below are the ones a binary build actually carries or fetches.
+
+| Piece | License | Where |
+| --- | --- | --- |
+| Virtual-Audio-Driver | MIT | `drivers/windows/Virtual-Audio-Driver/LICENSE` (Copyright 2025 MikeTheTech) |
+| Microsoft SysVAD / Simple Audio Sample, inside that driver | MS-PL | `drivers/windows/Virtual-Audio-Driver/THIRD_PARTY_NOTICES.md` |
+| libASPL 3.1.2 | MIT | fetched at macOS driver build time from https://github.com/gavv/libASPL (tag v3.1.2). Not vendored. |
+| DPDFNet ONNX weights (`dpdfnet8_48khz_hr`, `dpdfnet2_48khz_hr`) | Apache-2.0 | downloaded by `hush models fetch` from the Ceva-IP/DPDFNet repository. Not committed. |
+| ONNX Runtime, via the `ort` crate | MIT | downloaded at build time and copied next to the Windows executables. Not committed. |
+
+WebRTC audio processing (BSD-3-Clause), DeepFilterNet3 / tract (MIT OR Apache-2.0), RNNoise / nnnoiseless (BSD-3-Clause), and Tauri (MIT OR Apache-2.0) are Rust dependencies. Their license texts ship with the crates.
+
+The Windows test certificate password `hush-test` is not a secret. CI generates a new self-signed test certificate on every package build. It is only useful while Windows test signing is turned on. It is not an EV certificate and it is not a production key.

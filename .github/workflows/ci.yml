@@ -25,6 +25,9 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config cmake clang meson ninja-build g++
           echo "LIBRARY_PATH=$(dirname "$(gcc -print-file-name=libstdc++.so)")" >> "$GITHUB_ENV"
+      - name: Third-party notices
+        if: runner.os == 'Linux'
+        run: sh scripts/ci/check-notices.sh
       - name: Windows Meson
         if: runner.os == 'Windows'
         run: pip install meson ninja
