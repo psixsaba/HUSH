@@ -39,7 +39,11 @@ jobs:
         run: cargo test -p hush-core -p hush-ffi -p hush-cli --release -- --test-threads=8
       - name: Windows desktop shell
         if: runner.os == 'Windows'
-        run: cargo build -p hush-cli -p hush-desktop --release
+        shell: bash
+        run: |
+          mkdir -p apps/desktop/dist
+          printf '%s\n' '<!doctype html><title>HUSH</title>' > apps/desktop/dist/index.html
+          cargo build -p hush-cli -p hush-desktop --release
   macos-driver:
     runs-on: macos-latest
     steps:
