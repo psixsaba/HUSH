@@ -2,16 +2,16 @@
 
 This build is test-signed. Windows will load it only while test signing is on. A normal PC with Secure Boot enabled will refuse it. That is a development machine setting.
 
-The installer is the NSIS setup executable from the `v0.1.0-windows-test` release (the MSI installs the same files). It installs the app, `hush.exe`, the ONNX Runtime DLL, and the virtual audio driver.
+The installer is the NSIS setup executable from the `v0.2.0` release (`HUSH_0.2.0_x64-setup.exe`; the MSI installs the same files). It installs the app, `hush.exe`, the ONNX Runtime DLL, a Start Menu shortcut, and the test-signed virtual audio driver. The uninstaller removes the driver. Open HUSH and use the ON/OFF switch. Start on login is a switch in the app. The user-session bridge still starts at sign-in so the driver has somewhere to send audio.
 
 ## მოკლედ
 
 1. Secure Boot გამორთე UEFI/BIOS-ში. Test signing მასთან ერთად არ იმუშავებს.
 2. PowerShell გახსენი ადმინისტრატორით.
 3. ჩაწერე `bcdedit /set testsigning on` და გადატვირთე კომპიუტერი. ეკრანის ქვედა მარჯვენა კუთხეში უნდა ეწეროს **Test Mode**.
-4. გაუშვი `HUSH_0.1.0_x64-setup.exe`.
+4. გაუშვი `HUSH_0.2.0_x64-setup.exe` (ან MSI).
 5. Sound settings-ში უნდა გამოჩნდეს **HUSH Microphone** და **HUSH Speaker**.
-6. HUSH ზის ტრეში და ლოგინზე თავისით ირთვება.
+6. გახსენი HUSH და ჩართე დიდი ON/OFF. Start on login იქვეა.
 7. Zoom, Meet, Discord ან Teams-ში აირჩიე ეს ორი მოწყობილობა.
 8. შემოწმება: `hush selftest` უნდა დასრულდეს კოდით 0.
 

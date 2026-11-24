@@ -1,20 +1,270 @@
 @import "tailwindcss";
 
-:root {
+:root,
+:root[data-theme="dark"] {
   color-scheme: dark;
-  font-family: "Avenir Next", "Segoe UI", sans-serif;
-  background: #100e0c;
-  color: #efe6da;
+  --bg: #14120f;
+  --bg-2: #1d1a16;
+  --ink: #f4efe8;
+  --muted: rgba(244, 239, 232, 0.62);
+  --line: rgba(244, 239, 232, 0.1);
+  --card: #221e19;
+  --accent: #e07a45;
+  --good: #7dcea0;
+  --warn: #e2c16b;
+  --bad: #e07a5f;
+  --track: rgba(244, 239, 232, 0.08);
+  --shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4efe8;
+  --bg-2: #fffaf4;
+  --ink: #1c1612;
+  --muted: rgba(28, 22, 18, 0.62);
+  --line: rgba(28, 22, 18, 0.1);
+  --card: #fffdf9;
+  --accent: #c4552a;
+  --good: #1f7a4d;
+  --warn: #8a5a12;
+  --bad: #a33b24;
+  --track: rgba(28, 22, 18, 0.08);
+  --shadow: 0 18px 40px rgba(80, 48, 24, 0.08);
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  color: var(--ink);
   background:
-    radial-gradient(1200px 500px at 10% -10%, rgba(196, 122, 58, 0.18), transparent 50%),
-    #100e0c;
+    radial-gradient(900px 420px at 0% -10%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 55%),
+    var(--bg);
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
 }
 
 #root {
   min-height: 100vh;
+}
+
+.app-shell {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 20px 48px;
+}
+
+.topbar,
+.banner,
+.hero,
+.toggle,
+.meter-label,
+.readouts {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.mark {
+  margin: 0;
+  letter-spacing: 0.22em;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+h1, h2, h3 {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+  font-weight: 500;
+}
+
+h1 {
+  margin: 4px 0 0;
+  font-size: 28px;
+}
+
+.theme {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.banner, .hero, .panel {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+}
+
+.banner {
+  margin-top: 22px;
+  padding: 16px 18px;
+  align-items: center;
+}
+
+.banner p, .hint, .lede {
+  color: var(--muted);
+  margin: 4px 0 0;
+  line-height: 1.45;
+}
+
+.banner.warn {
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--line));
+}
+
+.hero {
+  margin-top: 18px;
+  padding: 28px;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.power {
+  width: 148px;
+  height: 148px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 0;
+  cursor: pointer;
+  color: var(--muted);
+  background: var(--track);
+  box-shadow: inset 0 0 0 10px color-mix(in srgb, var(--ink) 6%, transparent);
+  font-size: 28px;
+  letter-spacing: 0.14em;
+}
+
+.power.on {
+  color: #102117;
+  background: var(--good);
+  box-shadow: 0 0 0 10px color-mix(in srgb, var(--good) 25%, transparent);
+}
+
+.power:disabled {
+  cursor: wait;
+}
+
+.hero-copy {
+  min-width: 0;
+}
+
+.state {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.state.on {
+  color: var(--good);
+}
+
+h2 {
+  margin: 6px 0 0;
+  font-size: 34px;
+}
+
+.readouts {
+  justify-content: flex-start;
+  margin-top: 16px;
+}
+
+.readout {
+  min-width: 92px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--bg);
+}
+
+.readout span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.readout strong {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.panel {
+  padding: 18px 18px 8px;
+}
+
+.panel h3 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.toggle {
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.meters {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 16px;
+}
+
+.meter-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.meter-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--good));
+}
+
+.space-y-2 {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+
+.hint {
+  font-size: 13px;
+}
+
+.pad {
+  padding: 0 4px;
+}
+
+.error {
+  color: var(--bad);
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+}
+
+@media (max-width: 800px) {
+  .hero, .grid, .banner, .topbar {
+    display: grid;
+  }
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  h2 {
+    font-size: 28px;
+  }
 }

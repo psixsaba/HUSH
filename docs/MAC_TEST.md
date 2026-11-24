@@ -1,5 +1,25 @@
 # HUSH on a Mac
 
+## Install the disk image
+
+1. Open `HUSH_0.2.0_aarch64.dmg` from the `v0.2.0` pre-release. The app is built for Apple silicon. The driver inside the package is universal.
+2. Drag **HUSH.app** to **Applications**.
+3. Double-click **HUSH_0.2.0_macos.pkg**. Enter an administrator password. The package installs `HUSH.driver` into `/Library/Audio/Plug-Ins/HAL` and runs `killall coreaudiod`.
+4. Open HUSH. Turn the large switch ON. It stays on across restarts when that was the last state. Start on login is a separate switch.
+5. In Zoom, Meet, Discord, or Teams select **HUSH Microphone** and **HUSH Speaker**.
+6. If the window says the virtual driver is missing, click **Install driver**. macOS asks for an administrator password and copies the plugin that shipped inside the app.
+
+This build is signed ad hoc. It is not notarized, because notarization needs an Apple Developer ID. If macOS says the app cannot be opened:
+
+1. Right-click `HUSH.app`, choose **Open**, then **Open** again.
+2. Or, in Terminal: `xattr -cr /Applications/HUSH.app`
+
+If the plugin never appears in Sound settings, open System Settings, Privacy & Security, and allow the blocked plugin if macOS offers that button. `coreaudiod` on Apple silicon often refuses an ad-hoc plugin until that click.
+
+To uninstall, double-click **Uninstall HUSH.command** on the disk image, or run `sudo /usr/local/share/hush/uninstall-hush.sh`. Drag HUSH.app to the Trash after that.
+
+## Build from source
+
 These steps are for a MacBook Air with Apple silicon, macOS 15, and the Xcode Command Line Tools. Homebrew is not required. The first script does not use sudo. Installing the audio plugin does.
 
 ## Build

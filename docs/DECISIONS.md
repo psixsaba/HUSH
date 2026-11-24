@@ -124,6 +124,14 @@ CI (`.github/workflows/windows-package.yml`) installs the WDK, compiles `Virtual
 
 The Windows Rust job has to compile WebRTC's bundled C++ with MSVC. `windows-latest` puts MinGW ahead of `cl`, and Meson then builds Abseil against a WinRT header that does not compile. `scripts/ci/use-msvc.ps1` loads `vcvars64` and drops MinGW from `PATH`. The driver package job runs on `windows-2022` because that image's Visual Studio 2022 is what the WDK registers `WindowsKernelModeDriver10.0` with. The universal Mac plugin forwards both architectures to libASPL with CMake's `LIST_SEPARATOR`. An unquoted `arm64;x86_64` was split, and the x86_64 slice linked an arm64 static library.
 
+## App window and the 0.2 installers
+
+The ON/OFF control starts and stops `RealtimeSession` inside the Tauri process. The last on/off state, the device names, the model, and the three clean switches are stored in the webview's local storage, so a restart restores them. Start on login is separate: macOS writes a per-user LaunchAgent, Windows writes `HKCU\...\Run\HUSH`. The elevated Windows driver install only registers the user-session bridge, which has no window.
+
+The macOS disk image carries `HUSH.app` and `HUSH_0.2.0_macos.pkg`. The package copies the universal HAL plugin and its postinstall script runs `killall coreaudiod`. The app can do the same copy through an administrator prompt. There is no Apple Developer ID in this project, so the signature is ad hoc and the image is not notarized. The Windows NSIS and MSI packages are unchanged in shape: per-machine, test-signed driver, Start Menu shortcut, uninstaller removes the driver.
+
+Level meters are the RMS of the microphone frame and of the frame the pipeline just wrote. CPU and latency are the same counters the CLI prints.
+
 ## What was left out on license grounds
 
 - PESQ. The ITU reference is not a permissive license. It is not a dependency and the harness does not compute it. Internal research can add it locally.
