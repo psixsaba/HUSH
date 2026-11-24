@@ -137,8 +137,10 @@ Add-Type -TypeDefinition $source -Language CSharp | Out-Null
 
 switch ($Action) {
     "Save" {
-        $render = [HushEndpoint]::DefaultId(0)
-        $capture = [HushEndpoint]::DefaultId(1)
+        $render = ""
+        $capture = ""
+        try { $render = [HushEndpoint]::DefaultId(0) } catch { Write-Host "no default playback device: $_" }
+        try { $capture = [HushEndpoint]::DefaultId(1) } catch { Write-Host "no default recording device: $_" }
         Set-Content -Path $Path -Value @($render, $capture) -Encoding ascii
         Write-Host "saved default playback $render"
         Write-Host "saved default recording $capture"

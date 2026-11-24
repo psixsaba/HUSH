@@ -168,23 +168,37 @@ fn ensure_setup() -> Result<PathBuf, String> {
     println!("VB-CABLE SHA-256 matches the pinned Pack45 hash.");
     let unpacked = dir.join("unpacked");
     let _ = fs::remove_dir_all(&unpacked);
-    let command = format!(
-        "Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
-        zip.display(),
-        unpacked.display()
-    );
-    let expanded = Command::new("powershell.exe")
-        .args(["-NoProfile", "-Command", &command])
+    fs::create_dir_all(&unpacked).map_err(|err| err.to_string())?;
+    // Windows PowerShell 7's Expand-Archive fails on this zip. tar.exe reads it.
+    let expanded = Command::new("tar")
+        .args(["-xf"])
+        .arg(&zip)
+        .arg("-C")
+        .arg(&unpacked)
         .status()
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| format!("tar: {err}"))?;
     if !expanded.success() {
         return Err("could not unzip VB-CABLE".into());
     }
-    let setup = unpacked.join("VBCABLE_Setup_x64.exe");
-    if !setup.is_file() {
-        return Err("VBCABLE_Setup_x64.exe was not in the zip".into());
+    find_setup(&unpacked).ok_or_else(|| "VBCABLE_Setup_x64.exe was not in the zip".to_string())
+}
+
+fn find_setup(dir: &std::path::Path) -> Option<PathBuf> {
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let entries = fs::read_dir(&current).ok()?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.file_name().and_then(|name| name.to_str()) == Some("VBCABLE_Setup_x64.exe") {
+                return Some(path);
+            }
+        }
     }
-    Ok(setup)
+    None
 }
 
 fn powershell(args: &[&str]) -> ExitCode {
