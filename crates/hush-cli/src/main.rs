@@ -143,7 +143,7 @@ fn selftest() -> ExitCode {
         eprintln!("ring: {err}");
         return ExitCode::from(1);
     }
-    println!("ring: wrote samples on /hush-mic and read them back");
+    println!("ring: wrote samples on a private segment and read them back");
     match frame_cost() {
         Ok(line) => println!("{line}"),
         Err(err) => {
@@ -162,13 +162,17 @@ fn selftest() -> ExitCode {
 }
 
 fn ring_roundtrip() -> Result<(), String> {
-    let publisher = RingPublisher::create().map_err(|err| err.to_string())?;
-    let attachment = RingAttachment::attach().map_err(|err| err.to_string())?;
+    /* Private name, at most 31 characters, so this does not reset /hush-mic
+       while a call is using it. macOS SHM_NAME_MAX is 31. */
+    let name = format!("/hs{:x}", std::process::id());
+    let publisher = RingPublisher::create_named(&name).map_err(|err| err.to_string())?;
+    let attachment = RingAttachment::attach_named(&name).map_err(|err| err.to_string())?;
     let mut reader = attachment.reader().map_err(|err| err.to_string())?;
     let signal: Vec<f32> = (0..4000).map(|i| (i as f32 * 0.01).sin()).collect();
     publisher.write(&signal);
     let mut dst = vec![0.0f32; 480];
     let missed = reader.read(0.0, &mut dst);
+    let _ = RingPublisher::unlink(&name);
     if missed != 0 {
         return Err(format!("{missed} samples were missing from the ring"));
     }

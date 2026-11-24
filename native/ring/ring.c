@@ -157,6 +157,55 @@ static HushRing *hush_ring_map_handle(HANDLE mapping, int initialize)
     return ring;
 }
 #else
+/* Darwin's fstat on a POSIX shm object reports st_size rounded up to the
+   page size, so a short object is st_size < sizeof(the ring), never an
+   equality test. ftruncate of an already-large object returns EINVAL, and
+   shrinking one the plugin has mapped is unspecified. fchmod on a Darwin
+   shm fd also returns EINVAL; the mode has to be set at shm_open, with the
+   umask cleared, because O_CREAT otherwise applies the process umask. */
+static int hush_ring_ensure_size(int fd, size_t bytes)
+{
+    struct stat st;
+    long page;
+    size_t step;
+    off_t want;
+    if (fstat(fd, &st) != 0) {
+        hush_ring_set_error("shared memory stat");
+        return -1;
+    }
+    if (st.st_size >= (off_t)bytes) {
+        return 0;
+    }
+    page = sysconf(_SC_PAGESIZE);
+    step = page > 1 ? (size_t)page : 16384u;
+    want = (off_t)((bytes + step - 1) / step * step);
+    if (ftruncate(fd, want) != 0) {
+        int trunc_err = errno;
+        if (fstat(fd, &st) != 0 || st.st_size < (off_t)bytes) {
+            errno = trunc_err;
+            hush_ring_set_error("shared memory sizing");
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int hush_shm_open_create(const char *name)
+{
+    mode_t previous = umask(0);
+    int fd = shm_open(name, O_CREAT | O_RDWR, 0666);
+    int saved = errno;
+    umask(previous);
+    errno = saved;
+    if (fd >= 0) {
+        int flags = fcntl(fd, F_GETFD);
+        if (flags >= 0) {
+            fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+        }
+    }
+    return fd;
+}
+
 static HushRing *hush_ring_wrap(int fd, int initialize)
 {
     HushRing *ring = calloc(1, sizeof(*ring));
@@ -166,38 +215,13 @@ static HushRing *hush_ring_wrap(int fd, int initialize)
     }
     ring->fd = fd;
     ring->map_len = sizeof(HushRingShared);
-    /* Size a new object only. Darwin's ftruncate returns EINVAL when the
-       POSIX shm object is already this size, and shrinking one that a plugin
-       has mapped is unspecified. Extending a short object is allowed. */
-    {
-        struct stat st;
-        if (fstat(fd, &st) != 0) {
-            hush_ring_set_error("shared memory stat");
-            close(fd);
-            free(ring);
-            return NULL;
-        }
-        if (st.st_size < (off_t)ring->map_len) {
-            if (ftruncate(fd, (off_t)ring->map_len) != 0) {
-                int trunc_err = errno;
-                if (fstat(fd, &st) != 0 || st.st_size < (off_t)ring->map_len) {
-                    errno = trunc_err;
-                    hush_ring_set_error("shared memory sizing");
-                    close(fd);
-                    free(ring);
-                    return NULL;
-                }
-            }
-        }
-    }
-    /* O_CREAT applies the process umask, so 0666 often lands as 0644.
-       The HAL plugin is not this uid and has to write the underrun counter. */
-    if (fchmod(fd, 0666) != 0 && errno != EPERM) {
-        hush_ring_set_error("shared memory mode");
+    if (hush_ring_ensure_size(fd, ring->map_len) != 0) {
         close(fd);
         free(ring);
         return NULL;
     }
+    /* MAP_SHARED only. No MAP_FIXED, and no Linux-only flags. The fd stays
+       open until destroy; Darwin keeps the mapping either way. */
     void *mapped = mmap(NULL, ring->map_len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (mapped == MAP_FAILED) {
         hush_ring_set_error("shared memory map");
@@ -234,12 +258,12 @@ HushRing *hush_ring_create_named(const char *name)
     }
     return hush_ring_map_handle(mapping, 1);
 #else
-    int fd = shm_open(name, O_CREAT | O_RDWR, 0666);
+    /* Not O_EXCL: the plugin may already have this name mapped. */
+    int fd = hush_shm_open_create(name);
     if (fd < 0) {
         hush_ring_set_error("shared memory open");
         return NULL;
     }
-    fcntl(fd, F_SETFD, FD_CLOEXEC);
     return hush_ring_wrap(fd, 1);
 #endif
 }
@@ -290,7 +314,15 @@ HushRing *hush_ring_attach_named(const char *name)
     }
     fcntl(fd, F_SETFD, FD_CLOEXEC);
     struct stat st;
-    if (fstat(fd, &st) != 0 || (size_t)st.st_size < sizeof(HushRingShared)) {
+    if (fstat(fd, &st) != 0) {
+        hush_ring_set_error("shared memory stat");
+        close(fd);
+        return NULL;
+    }
+    /* >= sizeof, not ==. Darwin rounds st_size up to a page. */
+    if (st.st_size < (off_t)sizeof(HushRingShared)) {
+        errno = EINVAL;
+        hush_ring_set_error("shared memory is shorter than the ring");
         close(fd);
         return NULL;
     }
