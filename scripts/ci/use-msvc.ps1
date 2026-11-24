@@ -42,12 +42,18 @@ if (-not $pathValue) {
     throw "vcvars64 did not produce a PATH."
 }
 $filtered = ($pathValue -split ';' | Where-Object { $_ -and ($_ -notmatch '(?i)mingw|strawberry') }) -join ';'
+$meson = Get-Command meson -ErrorAction Stop
+$wrapper = (Resolve-Path (Join-Path $PSScriptRoot ".")).Path
+$filtered = "$wrapper;$filtered"
 $env:PATH = $filtered
 $env:INCLUDE = $include
 $env:LIB = $lib
 $env:LIBPATH = $libpath
 $env:CC = "cl.exe"
 $env:CXX = "cl.exe"
+$env:HUSH_MESON = $meson.Source
+Write-Host "meson wrapper: $wrapper"
+Write-Host "real meson: $($meson.Source)"
 
 function Write-Env([string]$Name, [string]$Value) {
     if ($null -eq $Value) { return }
@@ -62,5 +68,6 @@ if ($env:GITHUB_ENV) {
     Write-Env "LIBPATH" $libpath
     Write-Env "CC" "cl.exe"
     Write-Env "CXX" "cl.exe"
+    Write-Env "HUSH_MESON" $meson.Source
 }
 Write-Host "cl.exe: $((Get-Command cl.exe).Source)"
