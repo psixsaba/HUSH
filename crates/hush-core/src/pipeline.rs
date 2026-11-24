@@ -18,7 +18,7 @@ pub struct PipelineConfig {
     pub aec_enabled: bool,
     pub ns_backend: NsBackend,
     pub strength: f32,
-    /// Clean Krisp Alt Speaker, play that signal, and use it as the AEC reference.
+    /// Clean HUSH Speaker, play that signal, and use it as the AEC reference.
     pub clean_incoming: bool,
 }
 

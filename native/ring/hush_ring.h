@@ -33,8 +33,8 @@ extern "C" {
 #define HUSH_RING_MAGIC 0x48555331u /* 'HUS1' */
 #define HUSH_RING_VERSION 1u
 #define HUSH_RING_CAPACITY 65536u
-#define HUSH_SHM_NAME "/hush-krisp-alt-mic"
-#define HUSH_SHM_SPEAKER "/hush-krisp-alt-spk"
+#define HUSH_SHM_NAME "/hush-mic"
+#define HUSH_SHM_SPEAKER "/hush-spk"
 #define HUSH_RING_FLAG_ACTIVE 1u
 #define HUSH_RING_FLAG_MUTED 2u
 

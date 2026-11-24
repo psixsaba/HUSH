@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
-project(KrispAltMicrophone CXX)
+project(HUSH CXX)
 
 if(NOT APPLE)
-    message(STATUS "Krisp Alt Microphone is a macOS AudioServerPlugIn; nothing to build on this host")
+    message(STATUS "HUSH is a macOS AudioServerPlugIn; nothing to build on this host")
     return()
 endif()
 
@@ -15,10 +15,10 @@ if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
 endif()
 
 set(CODESIGN_ID "" CACHE STRING "codesign identity; pass - for ad-hoc")
-set(DRIVER_NAME "KrispAltMicrophone")
+set(DRIVER_NAME "HUSH")
 set(DRIVER_VERSION "0.1.0")
-set(DRIVER_COPYRIGHT "Copyright (c) Hush contributors")
-set(DRIVER_IDENTIFIER "com.hush.audio.KrispAltMicrophone")
+set(DRIVER_COPYRIGHT "Copyright (c) HUSH contributors")
+set(DRIVER_IDENTIFIER "com.hush.audio")
 set(DRIVER_UID "A7C3E1B2-4F58-4D1A-9C0E-6B2F8A1D4E77")
 set(DRIVER_ENTRYPOINT "HushMicEntryPoint")
 

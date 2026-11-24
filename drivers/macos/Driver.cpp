@@ -1,4 +1,4 @@
-// Krisp Alt Microphone — a capture device fed by the Hush userspace pipeline.
+// HUSH Microphone and HUSH Speaker. The plugin is fed by the HUSH userspace pipeline.
 //
 // The plugin does not run the neural net. `hush run` or the desktop app writes
 // mono 48 kHz float frames into the POSIX shared-memory segment, and this
@@ -210,9 +210,9 @@ std::shared_ptr<aspl::Driver> CreateDriver()
     auto context = std::make_shared<aspl::Context>();
 
     aspl::DeviceParameters deviceParams;
-    deviceParams.Name = "Krisp Alt Microphone";
-    deviceParams.Manufacturer = "Hush";
-    deviceParams.DeviceUID = "hush.mic.krisp-alt";
+    deviceParams.Name = "HUSH Microphone";
+    deviceParams.Manufacturer = "HUSH";
+    deviceParams.DeviceUID = "com.hush.microphone";
     deviceParams.ModelUID = "hush.mic.model";
     deviceParams.SerialNumber = "0.1.0";
     deviceParams.SampleRate = kSampleRate;
@@ -240,9 +240,9 @@ std::shared_ptr<aspl::Driver> CreateDriver()
     device->SetIOHandler(handler);
 
     aspl::DeviceParameters speakerParams;
-    speakerParams.Name = "Krisp Alt Speaker";
-    speakerParams.Manufacturer = "Hush";
-    speakerParams.DeviceUID = "hush.spk.krisp-alt";
+    speakerParams.Name = "HUSH Speaker";
+    speakerParams.Manufacturer = "HUSH";
+    speakerParams.DeviceUID = "com.hush.speaker";
     speakerParams.ModelUID = "hush.spk.model";
     speakerParams.SampleRate = kSampleRate;
     speakerParams.ChannelCount = kChannels;

@@ -5,7 +5,7 @@
  *
  * Capture: the helper pushes 48 kHz mono float, WriteBytes pulls it into the
  * microphone DMA buffer. Render: ReadBytes pushes what the call app played,
- * the helper pulls it into Krisp Alt Speaker.
+ * the helper pulls it into HUSH Speaker.
  *
  * The IOCTL codes live in drivers/windows/ioctl.h and must stay in lockstep
  * with crates/hush-core/src/winbridge.rs.

@@ -35,8 +35,8 @@ struct HushRingReader {
 
 unsafe impl Send for RingPublisher {}
 
-pub const MIC_NAME: &str = "/hush-krisp-alt-mic";
-pub const SPEAKER_NAME: &str = "/hush-krisp-alt-spk";
+pub const MIC_NAME: &str = "/hush-mic";
+pub const SPEAKER_NAME: &str = "/hush-spk";
 
 impl RingPublisher {
     pub fn create() -> Result<Self> {
@@ -138,7 +138,7 @@ impl RingAttachment {
     }
 
     /// Write samples into a segment this process did not create.
-    /// The macOS plugin does the same for Krisp Alt Speaker.
+    /// The macOS plugin does the same for HUSH Speaker.
     pub fn write(&self, samples: &[f32]) {
         if samples.is_empty() {
             return;
@@ -222,7 +222,7 @@ mod tests {
     fn broadcast_read_underrun_and_resync() {
         let _guard = LOCK.lock().unwrap();
         let publisher = RingPublisher::create().unwrap();
-        assert_eq!(RingPublisher::shm_name(), "/hush-krisp-alt-mic");
+        assert_eq!(RingPublisher::shm_name(), "/hush-mic");
         publisher.set_latency_samples(1440);
 
         let attachment = RingAttachment::attach().unwrap();

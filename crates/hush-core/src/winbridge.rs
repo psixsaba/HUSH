@@ -1,9 +1,9 @@
 //! User-session bridge between the shared-memory rings and the virtual driver.
 //!
 //! The kernel miniport cannot open `Local\` mappings created by the logged-in
-//! user. This loop runs in that session: it copies Krisp Alt Microphone into
-//! `HUSH_IOCTL_WRITE_CAPTURE` and copies `HUSH_IOCTL_READ_RENDER` into Krisp
-//! Alt Speaker. The numbers match `drivers/windows/ioctl.h`.
+//! user. This loop runs in that session: it copies HUSH Microphone into
+//! `HUSH_IOCTL_WRITE_CAPTURE` and copies `HUSH_IOCTL_READ_RENDER` into HUSH
+//! Speaker. The numbers match `drivers/windows/ioctl.h`.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;

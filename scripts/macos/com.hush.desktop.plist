@@ -6,7 +6,7 @@
     <string>com.hush.desktop</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Applications/Hush.app/Contents/MacOS/hush-desktop</string>
+        <string>/Applications/HUSH.app/Contents/MacOS/HUSH</string>
     </array>
     <key>RunAtLoad</key>
     <true/>

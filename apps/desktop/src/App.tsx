@@ -119,15 +119,15 @@ export function App() {
     <main className="mx-auto grid max-w-5xl gap-6 px-4 py-8 md:grid-cols-[1.4fr_0.8fr] md:px-8">
       <section className="space-y-6">
         <header>
-          <p className="text-xs uppercase tracking-[0.22em] text-[#c47a3a]">Hush</p>
+          <p className="text-xs uppercase tracking-[0.22em] text-[#c47a3a]">HUSH</p>
           <h1 className="mt-2 font-serif text-4xl text-[#efe6da]">The mic your call actually hears.</h1>
           <p className="mt-3 max-w-xl text-[#efe6da]/70">
-            Echo cancellation, then DPDFNet8. Point Zoom, Meet, Discord, or Teams at Krisp Alt Microphone.
-            Krisp Alt Speaker is cleaned, played on the device you pick below, and used as the echo reference.
+            Echo cancellation, then DPDFNet8. Point Zoom, Meet, Discord, or Teams at HUSH Microphone.
+            HUSH Speaker is cleaned, played on the device you pick below, and used as the echo reference.
           </p>
           {!connected && (
             <p className="mt-3 text-sm text-[#e2c16b]">
-              Preview in the browser. Processing starts when this page is opened inside the Hush app.
+              Preview in the browser. Processing starts when this page is opened inside the HUSH app.
             </p>
           )}
         </header>
@@ -194,7 +194,7 @@ export function App() {
           <div className="flex items-center justify-between gap-4">
             <div>
               <Label>Echo cancellation</Label>
-              <p className="text-xs text-[#efe6da]/50">WebRTC AEC3, using Krisp Alt Speaker as the reference.</p>
+              <p className="text-xs text-[#efe6da]/50">WebRTC AEC3, using HUSH Speaker as the reference.</p>
             </div>
             <Switch
               checked={settings.aec_enabled}
@@ -205,7 +205,7 @@ export function App() {
             <div>
               <Label>Clean incoming audio</Label>
               <p className="text-xs text-[#efe6da]/50">
-                Krisp Alt Speaker is denoised before it reaches your headphones. That cleaned signal is the echo reference.
+                HUSH Speaker is denoised before it reaches your headphones. That cleaned signal is the echo reference.
               </p>
             </div>
             <Switch
@@ -259,7 +259,7 @@ export function App() {
         </Card>
         <Card>
           <p className="text-sm leading-6 text-[#efe6da]/75">
-            Install the audio driver, then choose Krisp Alt Microphone and Krisp Alt Speaker in the call app. Hush has
+            Install the audio driver, then choose HUSH Microphone and HUSH Speaker in the call app. HUSH has
             to be running for the speaker to reach your headphones. That bridge is also the echo reference.
           </p>
         </Card>

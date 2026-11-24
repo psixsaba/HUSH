@@ -5,8 +5,8 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-  DetailPrint "Hush is installed for the current user."
-  DetailPrint "Krisp Alt Microphone needs the test-signed virtual audio driver."
+  DetailPrint "HUSH is installed for the current user."
+  DetailPrint "HUSH Microphone needs the test-signed virtual audio driver."
   DetailPrint "Build and sign it with the WDK. See drivers/windows/README.md."
 !macroend
 

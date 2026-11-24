@@ -7,7 +7,7 @@ if [ "$(uname -s)" != "Darwin" ]; then
     exit 1
 fi
 root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
-driver="$root/drivers/macos/build/KrispAltMicrophone.driver"
+driver="$root/drivers/macos/build/HUSH.driver"
 if [ ! -d "$driver/Contents/MacOS" ]; then
     echo "Missing $driver. Build it with drivers/macos/build.sh." >&2
     exit 1
@@ -34,7 +34,7 @@ chmod 755 "$stage/scripts/postinstall"
 # Ad-hoc sign the bundle inside the payload so a local install has a signature.
 # coreaudiod on Apple Silicon may still refuse it without a Developer ID.
 if command -v codesign >/dev/null 2>&1; then
-    codesign --force --sign - "$payload/Library/Audio/Plug-Ins/HAL/KrispAltMicrophone.driver" || \
+    codesign --force --sign - "$payload/Library/Audio/Plug-Ins/HAL/HUSH.driver" || \
         echo "warning: ad-hoc codesign failed; the plugin may not load" >&2
 fi
 pkgbuild \
@@ -43,5 +43,5 @@ pkgbuild \
     --identifier com.hush.audio \
     --version 0.1.0 \
     --install-location / \
-    "$root/dist/Hush-unsigned.pkg"
-echo "wrote $root/dist/Hush-unsigned.pkg"
+    "$root/dist/HUSH-unsigned.pkg"
+echo "wrote $root/dist/HUSH-unsigned.pkg"

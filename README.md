@@ -1,8 +1,8 @@
-# Hush
+# HUSH
 
-Real-time noise and echo cancellation for calls. The microphone path is WebRTC AEC3, then DPDFNet8. DeepFilterNet3 and RNNoise stay available when you want less delay or less CPU. A virtual microphone and a virtual speaker, both named for the call apps that will select them, sit on top of that core on macOS. On Windows the same core feeds a virtual audio driver through a user-mode helper.
+Real-time noise and echo cancellation for calls. The microphone path is WebRTC AEC3, then DPDFNet8. DeepFilterNet3 and RNNoise stay available when you want less delay or less CPU. A virtual microphone and a virtual speaker sit on top of that core on macOS. On Windows the same core feeds a virtual audio driver through a user-mode helper.
 
-The call app should use **Krisp Alt Microphone** and **Krisp Alt Speaker**. Hush has to be running. Incoming call audio is cleaned, played to your output device, and that cleaned signal is the echo reference.
+The call app should use **HUSH Microphone** and **HUSH Speaker**. HUSH has to be running. Incoming call audio is cleaned, played to your output device, and that cleaned signal is the echo reference. Krisp is the product this is measured against. It is not part of HUSH.
 
 ## Layout
 
@@ -60,10 +60,21 @@ cargo build -p hush-cli --release
 
 ### macOS
 
+On a Mac with Xcode Command Line Tools and no Homebrew:
+
 ```bash
-brew install cmake meson ninja
+scripts/macos/dev-setup-and-test.sh
+sudo scripts/macos/install-driver.sh
+./target/release/hush selftest
+```
+
+The setup script installs rustup, CMake, Meson, and Ninja under the home directory, downloads the DPDFNet8 weights into `~/.cache/dpdfnet`, builds the core, the arm64 HAL plugin, and the CLI, and runs the Rust tests. It does not install the driver. `HUSH_UNIVERSAL=1 drivers/macos/build.sh` adds an Intel slice. The call-app steps are [docs/MAC_TEST.md](docs/MAC_TEST.md).
+
+If CMake, Meson, and Ninja are already installed, the same builds are:
+
+```bash
 cargo build -p hush-cli -p hush-desktop --release
-drivers/macos/build.sh          # add HUSH_UNIVERSAL=1 for Intel and Apple Silicon
+drivers/macos/build.sh
 sudo scripts/macos/install-driver.sh
 ```
 
@@ -107,7 +118,7 @@ hush run --ns rnnoise                 # live mic, prints one line per 10 ms fram
 hush run --bridge --output "Headphones"
 ```
 
-`--ns` is `dpdfnet` (default), `dpdfnet2`, `deepfilter`, `rnnoise`, `target-speaker`, or `off`. `target-speaker` refuses to start. The training plan is [docs/TARGET_SPEAKER.md](docs/TARGET_SPEAKER.md). `--strength 0` skips the suppressor and its delay. Strength 1 is the model's full attenuation. `--clean-incoming true` (the default on `hush run`) denoises Krisp Alt Speaker before playback and uses that signal as the echo reference.
+`--ns` is `dpdfnet` (default), `dpdfnet2`, `deepfilter`, `rnnoise`, `target-speaker`, or `off`. `target-speaker` refuses to start. The training plan is [docs/TARGET_SPEAKER.md](docs/TARGET_SPEAKER.md). `--strength 0` skips the suppressor and its delay. Strength 1 is the model's full attenuation. `--clean-incoming true` (the default on `hush run`) denoises HUSH Speaker before playback and uses that signal as the echo reference.
 
 The DPDFNet ONNX files are not in git. `dpdfnet download dpdfnet8_48khz_hr` and `dpdfnet download dpdfnet2_48khz_hr` put them in `~/.cache/dpdfnet/models/`. `HUSH_DPDF_ONNX` and `HUSH_DPDF_ONNX_2` override those paths.
 
@@ -131,16 +142,16 @@ This tree was built and measured on Linux. It was not loaded into coreaudiod, no
 
 On a Mac:
 
-- `HUSH_UNIVERSAL=1 drivers/macos/build.sh` produces `KrispAltMicrophone.driver`.
-- After install, `system_profiler SPAudioDataType` should list Krisp Alt Microphone and Krisp Alt Speaker.
-- Start Hush, select the pair in a call, and confirm the other side hears the cleaned mic and you hear them.
+- `HUSH_UNIVERSAL=1 drivers/macos/build.sh` produces `HUSH.driver`.
+- After install, `system_profiler SPAudioDataType` should list HUSH Microphone and HUSH Speaker. `hush selftest` checks that, the ring, and per-frame CPU. The Mac steps are [docs/MAC_TEST.md](docs/MAC_TEST.md).
+- Start HUSH, select the pair in a call, and confirm the other side hears the cleaned mic and you hear them.
 - Re-measure CPU on Apple Silicon. The default here is DPDFNet8. The budget used on this machine is a p95 frame under 8 ms. One hop was 3.2 ms.
 
 On a PC:
 
 - Build the core with the MSVC toolchain. `npm run tauri build` in `apps/desktop` produces the NSIS and MSI packages.
 - `drivers/windows/ci-build.ps1` installs the WDK when it can and compiles `VirtualAudioDriver.sln`. It was not run here.
-- Test-sign the driver, install it, run Hush in the same session, and confirm the two endpoints enumerate. The steps are in `drivers/windows/README.md`.
+- Test-sign the driver, install it, run HUSH in the same session, and confirm the two endpoints enumerate. The steps are in `drivers/windows/README.md`.
 - Attestation signing needs an EV certificate and a Partner Center account. HLK is separate and was not run.
 
 VoiceBank-DEMAND test set, all 824 files, 48 kHz. The WAVs are not in git. PESQ is wideband at 16 kHz and is an internal number only. DNSMOS is P.835. DPDFNet2 and the 16 kHz rows were scored with the Python causal stream, aligned by the measured lag. DPDFNet8, RNNoise, and DeepFilterNet3 are the Rust pipeline. On `p232_001` the Rust DPDFNet8 stream matches that Python stream at correlation 1.000, and Rust DPDFNet2 at the same 50 ms shift is SI-SDR 22.49.

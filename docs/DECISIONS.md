@@ -10,7 +10,7 @@ Echo cancellation runs before noise removal. AEC3 needs the unprocessed micropho
 
 `webrtc-audio-processing` 2.1 with the `bundled` feature compiles the BSD WebRTC audio module. The echo canceller is `EchoCanceller::Full`, which is AEC3, with delay estimation left on and the built-in noise suppressor left off. The high-pass filter stays on because AEC3 is designed to see a high-passed capture. A Rust reimplementation would be a second filter to keep correct. The C++ module is the one the browsers ship.
 
-AEC3's echo-path delay is not added to the transmitted latency. The capture frame it returns is aligned with the microphone frame. The latency figure reported by Hush is the noise suppressor's delay plus, in the live engine, the samples sitting in the input buffer.
+AEC3's echo-path delay is not added to the transmitted latency. The capture frame it returns is aligned with the microphone frame. The latency figure reported by HUSH is the noise suppressor's delay plus, in the live engine, the samples sitting in the input buffer.
 
 ## DeepFilterNet3 stayed in the tree
 
@@ -69,7 +69,7 @@ Offline cleaning flushes the model delay with zeros and then removes that many s
 
 ## Incoming audio
 
-Krisp Alt Speaker is cleaned with a second suppressor, the same backend as the microphone, then played to the hardware output. The echo reference is that cleaned buffer, because that is the signal that will come back through the room. The canceller is not given a second copy of the model delay. The playback itself is already delayed by the suppressor, and AEC3 estimates the acoustic path from there.
+HUSH Speaker is cleaned with a second suppressor, the same backend as the microphone, then played to the hardware output. The echo reference is that cleaned buffer, because that is the signal that will come back through the room. The canceller is not given a second copy of the model delay. The playback itself is already delayed by the suppressor, and AEC3 estimates the acoustic path from there.
 
 The second DPDFNet session shares the one ONNX Runtime environment the process is allowed to create. A unit test loads two sessions. Turning processing off, or strength to 0, skips the incoming model and its delay. This path was not played through Core Audio here.
 
@@ -81,10 +81,10 @@ No permissive realtime model removes other speakers. WeSpeaker's embedding is Ap
 
 One AudioServerPlugIn, built on libASPL 3.1.2 (MIT), publishes two devices:
 
-- Krisp Alt Microphone, 48 kHz float32 stereo, read by the call app.
-- Krisp Alt Speaker, 48 kHz float32 stereo, written by the call app.
+- HUSH Microphone, 48 kHz float32 stereo, read by the call app.
+- HUSH Speaker, 48 kHz float32 stereo, written by the call app.
 
-The plugin does not run the neural net. The app writes the cleaned microphone into `/hush-krisp-alt-mic`. The plugin writes the call's playback, averaged to mono, into `/hush-krisp-alt-spk`. The app plays that segment on the hardware output and feeds it to AEC3. A HAL plugin is a poor place to open a second device, and coreaudiod's sandbox makes a direct hardware tap unreliable. The bridge is the app.
+The plugin does not run the neural net. The app writes the cleaned microphone into `/hush-mic`. The plugin writes the call's playback, averaged to mono, into `/hush-spk`. The app plays that segment on the hardware output and feeds it to AEC3. A HAL plugin is a poor place to open a second device, and coreaudiod's sandbox makes a direct hardware tap unreliable. The bridge is the app.
 
 The segments are mode 0666. The plugin and the app are not always the same uid, and the reader increments an underrun counter, so the mapping has to be writable. Treat it as local audio, not a secret. A production build should move this to a per-user mach port.
 
@@ -104,7 +104,7 @@ Tauri 2, React, TypeScript, Tailwind, and Radix primitives (the shadcn set: butt
 
 ## Windows
 
-The core stays the same crate. The rings are `Local\hush-krisp-alt-mic` and `Local\hush-krisp-alt-spk`. A kernel miniport in session 0 cannot open those, so `hush service` (and the Tauri app, on Windows) runs in the user session and feeds `\Device\HushVad` with the IOCTLs in `drivers/windows/ioctl.h`. The driver copies that queue into the capture DMA buffer and queues render audio back out. 48 kHz is one sample in, one sample out. Other rates are a zero-order hold.
+The core stays the same crate. The rings are `Local\hush-mic` and `Local\hush-spk`. A kernel miniport in session 0 cannot open those, so `hush service` (and the Tauri app, on Windows) runs in the user session and feeds `\Device\HushVad` with the IOCTLs in `drivers/windows/ioctl.h`. The driver copies that queue into the capture DMA buffer and queues render audio back out. 48 kHz is one sample in, one sample out. Other rates are a zero-order hold.
 
 The NSIS and MSI packages are Tauri bundle targets. The NSIS hook tells the user the driver is a separate test-signed package. It does not load a `.sys`.
 

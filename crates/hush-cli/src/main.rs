@@ -9,11 +9,11 @@ use std::time::Duration;
 use clap::{Parser, Subcommand, ValueEnum};
 use hush_core::{
     read_wav_mono, write_wav_mono, list_devices, NsBackend, Pipeline, PipelineConfig,
-    RealtimeSession, SessionConfig, SAMPLE_RATE,
+    RealtimeSession, RingAttachment, RingPublisher, SessionConfig, FRAME_SAMPLES, SAMPLE_RATE,
 };
 
 #[derive(Parser)]
-#[command(name = "hush", about = "48 kHz echo and noise cancellation")]
+#[command(name = "hush", about = "HUSH, 48 kHz echo and noise cancellation")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -31,6 +31,9 @@ enum Command {
     Batch(BatchArgs),
     /// Shuttle the virtual microphone and speaker through the Windows driver IOCTL.
     Service,
+    /// Check the ring, per-frame CPU, and, on macOS, that coreaudiod lists HUSH.
+    #[command(name = "selftest")]
+    SelfTest,
 }
 
 #[derive(Parser)]
@@ -90,7 +93,7 @@ struct RunArgs {
     /// Publish the virtual-speaker segment and play it (plus optional monitor) to --output.
     #[arg(long, default_value_t = false)]
     bridge: bool,
-    /// Clean Krisp Alt Speaker before playback and use that signal as the echo reference.
+    /// Clean HUSH Speaker before playback and use that signal as the echo reference.
     #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
     clean_incoming: bool,
 }
@@ -130,6 +133,139 @@ fn main() -> ExitCode {
         Command::Run(args) => run(args),
         Command::Batch(args) => batch(args),
         Command::Service => service(),
+        Command::SelfTest => selftest(),
+    }
+}
+
+fn selftest() -> ExitCode {
+    println!("HUSH self-test");
+    if let Err(err) = ring_roundtrip() {
+        eprintln!("ring: {err}");
+        return ExitCode::from(1);
+    }
+    println!("ring: wrote samples on /hush-mic and read them back");
+    match frame_cost() {
+        Ok(line) => println!("{line}"),
+        Err(err) => {
+            eprintln!("pipeline: {err}");
+            return ExitCode::from(1);
+        }
+    }
+    match listed_devices() {
+        Ok(line) => println!("{line}"),
+        Err(err) => {
+            eprintln!("devices: {err}");
+            return ExitCode::from(1);
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+fn ring_roundtrip() -> Result<(), String> {
+    let publisher = RingPublisher::create().map_err(|err| err.to_string())?;
+    let attachment = RingAttachment::attach().map_err(|err| err.to_string())?;
+    let mut reader = attachment.reader().map_err(|err| err.to_string())?;
+    let signal: Vec<f32> = (0..4000).map(|i| (i as f32 * 0.01).sin()).collect();
+    publisher.write(&signal);
+    let mut dst = vec![0.0f32; 480];
+    let missed = reader.read(0.0, &mut dst);
+    if missed != 0 {
+        return Err(format!("{missed} samples were missing from the ring"));
+    }
+    if dst.iter().any(|sample| !sample.is_finite()) {
+        return Err("ring returned a non-finite sample".into());
+    }
+    if dst.iter().all(|sample| *sample == 0.0) {
+        return Err("ring returned silence".into());
+    }
+    Ok(())
+}
+
+fn frame_cost() -> Result<String, String> {
+    let (backend, mut pipeline) = match Pipeline::new(PipelineConfig {
+        enabled: true,
+        muted: false,
+        aec_enabled: false,
+        ns_backend: NsBackend::DpdfNet,
+        strength: 1.0,
+        clean_incoming: false,
+    }) {
+        Ok(pipeline) => (NsBackend::DpdfNet, pipeline),
+        Err(_) => {
+            let pipeline = Pipeline::new(PipelineConfig {
+                enabled: true,
+                muted: false,
+                aec_enabled: false,
+                ns_backend: NsBackend::RnNoise,
+                strength: 1.0,
+                clean_incoming: false,
+            })
+            .map_err(|err| err.to_string())?;
+            println!("pipeline: DPDFNet8 weights are not cached, timing RNNoise instead");
+            (NsBackend::RnNoise, pipeline)
+        }
+    };
+    let mut times = Vec::new();
+    let mut out = vec![0.0f32; FRAME_SAMPLES];
+    for frame_index in 0..40 {
+        let frame: Vec<f32> = (0..FRAME_SAMPLES)
+            .map(|i| {
+                let n = frame_index * FRAME_SAMPLES + i;
+                (n as f32 * 220.0 * std::f32::consts::TAU / SAMPLE_RATE as f32).sin() * 0.2
+            })
+            .collect();
+        let stats = pipeline
+            .process_frame(&frame, None, &mut out)
+            .map_err(|err| err.to_string())?;
+        if frame_index > 5 {
+            times.push(stats.process_ns);
+        }
+    }
+    times.sort_unstable();
+    let p50 = times[times.len() / 2];
+    let p95 = times[times.len() * 95 / 100];
+    let ms = |ns: u64| ns as f64 / 1_000_000.0;
+    let cpu = |ns: u64| ns as f64 / 10_000_000.0 * 100.0;
+    Ok(format!(
+        "frames: {}  ns {}  p50 {:.2} ms ({:.1}% of a 10 ms frame)  p95 {:.2} ms ({:.1}%)  delay {:.1} ms",
+        times.len(),
+        backend.as_str(),
+        ms(p50),
+        cpu(p50),
+        ms(p95),
+        cpu(p95),
+        pipeline.algorithmic_latency_samples() as f64 / SAMPLE_RATE as f64 * 1000.0
+    ))
+}
+
+fn listed_devices() -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("system_profiler")
+            .arg("SPAudioDataType")
+            .output()
+            .map_err(|err| format!("system_profiler failed: {err}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "system_profiler exited with {:?}",
+                output.status.code()
+            ));
+        }
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mic = text.contains("HUSH Microphone");
+        let speaker = text.contains("HUSH Speaker");
+        if !mic || !speaker {
+            return Err(format!(
+                "coreaudiod lists HUSH Microphone: {mic}, HUSH Speaker: {speaker}. Install the driver with sudo scripts/macos/install-driver.sh and run this again."
+            ));
+        }
+        return Ok(
+            "devices: coreaudiod lists HUSH Microphone and HUSH Speaker".into(),
+        );
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok("devices: skipped (coreaudiod only exists on macOS)".into())
     }
 }
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build the Krisp Alt Microphone AudioServerPlugIn.
+# Build the HUSH AudioServerPlugIn (HUSH Microphone and HUSH Speaker).
 # Apple Silicon and Intel: set HUSH_UNIVERSAL=1 to produce both slices.
 set -eu
 
@@ -20,4 +20,4 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
     -DCODESIGN_ID="$identity" \
     ${archs:+-DCMAKE_OSX_ARCHITECTURES="$archs"}
 cmake --build build
-echo "built $(pwd)/build/KrispAltMicrophone.driver"
+echo "built $(pwd)/build/HUSH.driver"

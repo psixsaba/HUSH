@@ -86,7 +86,7 @@ static int hush_ring_valid_name(const char *name)
 #ifdef _WIN32
 static void hush_ring_win_name(const char *name, char *out, size_t out_len)
 {
-    const char *bare = (name && name[0] == '/') ? name + 1 : (name ? name : "hush-krisp-alt-mic");
+    const char *bare = (name && name[0] == '/') ? name + 1 : (name ? name : "hush-mic");
     snprintf(out, out_len, "Local\\%s", bare);
 }
 

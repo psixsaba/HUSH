@@ -1,6 +1,6 @@
 # Windows virtual microphone and speaker
 
-The Rust core is the same crate as on macOS. On Windows the ring is a named file mapping, `Local\hush-krisp-alt-mic` and `Local\hush-krisp-alt-spk`, created by `native/ring/ring.c`. This machine has no Windows Driver Kit, so the kernel driver was not compiled and not test-signed here.
+The Rust core is the same crate as on macOS. On Windows the ring is a named file mapping, `Local\hush-mic` and `Local\hush-spk`, created by `native/ring/ring.c`. This machine has no Windows Driver Kit, so the kernel driver was not compiled and not test-signed here.
 
 ## Which sample to start from
 
@@ -8,7 +8,7 @@ The Rust core is the same crate as on macOS. On Windows the ring is a named file
 
 `CMiniportWaveRTStream::WriteBytes` reads the capture queue filled by `HUSH_IOCTL_WRITE_CAPTURE` and converts it to the stream format (48 kHz is one-to-one; other rates are a zero-order hold). `ReadBytes` converts render audio back to 48 kHz mono float and queues it for `HUSH_IOCTL_READ_RENDER`. The control device is `\Device\HushVad`, opened from user mode as `\\.\HushVad`. Its DACL allows the logged-in user, the same trust as the shared-memory ring.
 
-`hush service` is that user-mode helper. It has to run in the interactive session, not as LocalSystem, because the rings are `Local\` mappings. The Tauri app starts the same loop on Windows. It reads Krisp Alt Microphone and writes the virtual mic, and it writes Krisp Alt Speaker from the virtual speaker. The desktop app still owns the neural net: it cleans the mic before the ring, and it cleans the speaker after the ring.
+`hush service` is that user-mode helper. It has to run in the interactive session, not as LocalSystem, because the rings are `Local\` mappings. The Tauri app starts the same loop on Windows. It reads HUSH Microphone and writes the virtual mic, and it writes HUSH Speaker from the virtual speaker. The desktop app still owns the neural net: it cleans the mic before the ring, and it cleans the speaker after the ring.
 
 CI runs `drivers/windows/ci-build.ps1` on `windows-latest`. The script tries Chocolatey `windowsdriverkit11`, then winget. If the kit is still absent it exits 0. If the kit is present, `msbuild` of `VirtualAudioDriver.sln` (Release, x64, `SignMode=Off`) must succeed. This Linux tree cannot compile the driver.
 
@@ -25,13 +25,13 @@ On a Windows machine with the WDK and Visual Studio installed:
 bcdedit /set testsigning on
 
 # Build the driver, then sign with a test certificate.
-makecert -r -pe -ss PrivateCertStore -n "CN=Hush Test" HushTest.cer
+makecert -r -pe -ss PrivateCertStore -n "CN=HUSH Test" HushTest.cer
 # Or, with the WDK tools:
-New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=Hush Test" -CertStoreLocation Cert:\CurrentUser\My
+New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=HUSH Test" -CertStoreLocation Cert:\CurrentUser\My
 signtool sign /fd SHA256 /a /f HushTest.pfx /p <password> HushVirtualAudio.sys
 ```
 
-Install the test certificate into `Trusted Root` and `Trusted Publishers` on that machine. `pnputil /add-driver VirtualAudioDriver.inf /install` loads the package only while test signing is on. Then start Hush, or run `hush service` in the same session, and point the call app at the virtual endpoints. Turn test signing off when you are done: `bcdedit /set testsigning off`.
+Install the test certificate into `Trusted Root` and `Trusted Publishers` on that machine. `pnputil /add-driver VirtualAudioDriver.inf /install` loads the package only while test signing is on. Then start HUSH, or run `hush service` in the same session, and point the call app at HUSH Microphone and HUSH Speaker. Turn test signing off when you are done: `bcdedit /set testsigning off`.
 
 Secure Boot must be off for test signing, or the firmware will reject the test certificate. That is a development machine setting, not a shipping setting.
 
