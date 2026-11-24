@@ -46,8 +46,8 @@ fn blank_to_none(value: Option<String>) -> Option<String> {
     })
 }
 
-fn session_config(settings: &UiSettings) -> SessionConfig {
-    SessionConfig {
+fn session_config(settings: &UiSettings) -> Result<SessionConfig, String> {
+    let mut config = SessionConfig {
         input_device: blank_to_none(settings.input_device.clone()),
         output_device: blank_to_none(settings.output_device.clone()),
         far_device: blank_to_none(settings.far_device.clone()),
@@ -62,7 +62,28 @@ fn session_config(settings: &UiSettings) -> SessionConfig {
         publish_ring: true,
         bridge_speaker: true,
         monitor_cleaned: settings.monitor_cleaned,
+        loopback_device: None,
+    };
+    #[cfg(windows)]
+    {
+        let lists = hush_core::list_devices().map_err(|err| err.to_string())?;
+        let plan = hush_core::engine_plan(
+            hush_core::hush_vad_loaded(),
+            &lists.outputs,
+            config.output_device.as_deref(),
+        );
+        config.publish_ring = plan.publish_ring;
+        config.bridge_speaker = plan.bridge_speaker;
+        if plan.route == hush_core::AudioRoute::VbCable {
+            config.pipeline.clean_incoming = false;
+            if !plan.cable_present {
+                return Err("VB-CABLE is not installed. Use Install VB-CABLE in this window.".into());
+            }
+            config.output_device = plan.playback_device;
+            config.loopback_device = plan.loopback_device;
+        }
     }
+    Ok(config)
 }
 
 fn owner(config: SessionConfig, commands: Receiver<Cmd>, ready: Sender<Result<(), String>>) {
@@ -104,7 +125,7 @@ fn start_session(state: tauri::State<AppState>, settings: UiSettings) -> Result<
     }
     let (tx, rx) = mpsc::channel();
     let (ready_tx, ready_rx) = mpsc::channel();
-    let config = session_config(&settings);
+    let config = session_config(&settings)?;
     let handle = std::thread::Builder::new()
         .name("hush-session".into())
         .spawn(move || owner(config, rx, ready_tx))
@@ -142,7 +163,7 @@ fn update_settings(state: tauri::State<AppState>, settings: UiSettings) -> Resul
     if let Some(worker) = slot.as_ref() {
         worker
             .tx
-            .send(Cmd::Update(session_config(&settings).pipeline))
+            .send(Cmd::Update(session_config(&settings)?.pipeline))
             .map_err(|err| err.to_string())?;
     }
     Ok(())
@@ -177,6 +198,61 @@ fn driver_status() -> Result<DriverStatus, String> {
 #[tauri::command]
 fn host_os() -> &'static str {
     std::env::consts::OS
+}
+
+#[derive(Serialize)]
+struct AudioStatus {
+    route: String,
+    cable_present: bool,
+    capture_label: String,
+    platform: String,
+}
+
+#[tauri::command]
+fn audio_status() -> Result<AudioStatus, String> {
+    let lists = hush_core::list_devices().map_err(|err| err.to_string())?;
+    #[cfg(windows)]
+    let loaded = hush_core::hush_vad_loaded();
+    #[cfg(not(windows))]
+    let loaded = true;
+    let plan = hush_core::engine_plan(loaded, &lists.outputs, None);
+    let route = match plan.route {
+        hush_core::AudioRoute::VbCable => "vbcable",
+        hush_core::AudioRoute::VirtualDriver => "driver",
+    };
+    Ok(AudioStatus {
+        route: route.into(),
+        cable_present: plan.cable_present,
+        capture_label: plan.capture_label.into(),
+        platform: std::env::consts::OS.into(),
+    })
+}
+
+#[tauri::command]
+fn install_cable() -> Result<String, String> {
+    #[cfg(windows)]
+    {
+        let exe = std::env::current_exe().map_err(|err| err.to_string())?;
+        let sibling = exe.parent().map(|dir| dir.join("hush.exe"));
+        let target = sibling.filter(|path| path.is_file()).unwrap_or(exe);
+        let command = format!(
+            "Start-Process -FilePath '{}' -ArgumentList 'vbcable','install' -Verb RunAs -Wait",
+            target.display()
+        );
+        let status = std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &command])
+            .status()
+            .map_err(|err| err.to_string())?;
+        if status.success() {
+            Ok("Windows asked for approval to install VB-CABLE. Reboot once if HUSH Microphone is still missing. Secure Boot can stay on.".into())
+        } else {
+            Err("Windows did not start the VB-CABLE install.".into())
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        Err("VB-CABLE is the Windows microphone. On macOS, use Install driver.".into())
+    }
 }
 
 #[tauri::command]
@@ -272,6 +348,8 @@ pub fn run() {
             session_stats,
             driver_status,
             host_os,
+            audio_status,
+            install_cable,
             set_tray_running,
             set_open_at_login,
             open_at_login,

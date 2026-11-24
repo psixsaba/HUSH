@@ -9,6 +9,8 @@ HUSH itself is MIT OR Apache-2.0. See `LICENSE`. Nothing GPL is shipped. The pie
 | libASPL 3.1.2 | MIT | fetched at macOS driver build time from https://github.com/gavv/libASPL (tag v3.1.2). Not vendored. |
 | DPDFNet ONNX weights (`dpdfnet8_48khz_hr`, `dpdfnet2_48khz_hr`) | Apache-2.0 | downloaded by `hush models fetch` from the Ceva-IP/DPDFNet repository. Not committed. |
 | ONNX Runtime, via the `ort` crate | MIT | downloaded at build time and copied next to the Windows executables. Not committed. |
+| `wasapi` crate | MIT | Windows loopback capture for the VB-CABLE echo reference. |
+| VB-CABLE Pack45 | VB-Audio donationware, not an open-source license | not redistributed. The Windows installer downloads `https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack45.zip` and checks SHA-256 `b950e39f01af1d04ea623c8f6d8eb9b6ea5c477c637295fabf20631c85116bfb`. |
 
 WebRTC audio processing (BSD-3-Clause) is in `third_party/webrtc-audio-processing-sys`. That copy matches crates.io 2.1.0 except the Windows build does not rename symbols with `rust-objcopy`. DeepFilterNet3 / tract (MIT OR Apache-2.0), RNNoise / nnnoiseless (BSD-3-Clause), and Tauri (MIT OR Apache-2.0) stay as crates.io dependencies. Their license texts ship with the crates.
 

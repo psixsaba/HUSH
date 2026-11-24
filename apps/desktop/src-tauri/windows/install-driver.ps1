@@ -1,8 +1,10 @@
-# Copies the CLI and ONNX Runtime beside HUSH.exe, then installs or removes
-# the test-signed virtual audio driver. Exit 0 when the app can stay
-# installed. Exit 1 when the driver was expected and did not install.
+# Copies the CLI and ONNX Runtime beside HUSH.exe, then installs VB-CABLE.
+# The test-signed HushVad driver is a developer option (HUSH_DEV_DRIVER=1
+# or -DevDriver). Exit 10 when Windows still needs one reboot.
 param(
-    [switch]$Uninstall
+    [switch]$Uninstall,
+    [switch]$RemoveCable,
+    [switch]$DevDriver
 )
 
 $ErrorActionPreference = "Continue"
@@ -31,7 +33,12 @@ if (-not (Test-Path $hush)) {
 }
 
 if ($Uninstall) {
-    & $hush driver uninstall
+    if ($RemoveCable) {
+        & $hush vbcable uninstall
+    }
+    if ($DevDriver -or $env:HUSH_DEV_DRIVER -eq "1") {
+        & $hush driver uninstall
+    }
     exit 0
 }
 
@@ -40,11 +47,13 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "DPDFNet8 was not downloaded. RNNoise still runs. Retry with: hush models fetch"
 }
 
-$package = Join-Path $resources "driver"
-& $hush driver install --package $package
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "The driver was not loaded. Enable test signing, reboot, then run:"
-    Write-Host "  & `"$hush`" driver install --package `"$package`""
-    exit 1
+& $hush vbcable install
+$code = $LASTEXITCODE
+if ($DevDriver -or $env:HUSH_DEV_DRIVER -eq "1") {
+    $package = Join-Path $resources "driver"
+    Write-Host "Developer option: installing the test-signed HushVad driver."
+    & $hush driver install --package $package
 }
+if ($code -eq 10) { exit 10 }
+if ($code -ne 0) { exit $code }
 exit 0

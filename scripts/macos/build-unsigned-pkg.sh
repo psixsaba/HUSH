@@ -43,7 +43,7 @@ pkgbuild \
     --root "$payload" \
     --scripts "$stage/scripts" \
     --identifier com.hush.audio \
-    --version 0.2.0 \
+    --version 0.3.0 \
     --install-location / \
-    "$root/dist/HUSH_0.2.0_macos.pkg"
-echo "wrote $root/dist/HUSH_0.2.0_macos.pkg"
+    "$root/dist/HUSH_0.3.0_macos.pkg"
+echo "wrote $root/dist/HUSH_0.3.0_macos.pkg"

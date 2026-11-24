@@ -1,18 +1,29 @@
 # HUSH on a Mac
 
+## One command
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/psixsaba/HUSH/main/install.sh | bash
+```
+
+`uninstall.sh` in this repository removes `/Applications/HUSH.app` and the HAL plugin.
+
 ## Install the disk image
 
-1. Open `HUSH_0.2.0_aarch64.dmg` from the `v0.2.0` pre-release. The app is built for Apple silicon. The driver inside the package is universal.
+1. Open `HUSH_0.3.0_aarch64.dmg` from the `v0.3.0` pre-release. The app is built for Apple silicon. The driver inside the package is universal.
 2. Drag **HUSH.app** to **Applications**.
-3. Double-click **HUSH_0.2.0_macos.pkg**. Enter an administrator password. The package installs `HUSH.driver` into `/Library/Audio/Plug-Ins/HAL` and runs `killall coreaudiod`.
+3. Double-click **HUSH_0.3.0_macos.pkg**. Enter an administrator password. The package installs `HUSH.driver` into `/Library/Audio/Plug-Ins/HAL` and runs `killall coreaudiod`.
 4. Open HUSH. Turn the large switch ON. It stays on across restarts when that was the last state. Start on login is a separate switch.
 5. In Zoom, Meet, Discord, or Teams select **HUSH Microphone** and **HUSH Speaker**.
 6. If the window says the virtual driver is missing, click **Install driver**. macOS asks for an administrator password and copies the plugin that shipped inside the app.
 
-This build is signed ad hoc. It is not notarized, because notarization needs an Apple Developer ID. If macOS says the app cannot be opened:
+This build is signed ad hoc unless Developer ID secrets are present in CI. It is not notarized without those secrets. On macOS 15 Sequoia, if macOS blocks the app or the plugin:
 
-1. Right-click `HUSH.app`, choose **Open**, then **Open** again.
-2. Or, in Terminal: `xattr -cr /Applications/HUSH.app`
+1. Try to open HUSH.
+2. Open **System Settings > Privacy & Security**.
+3. Click **Open Anyway**.
+
+`xattr -cr /Applications/HUSH.app` clears the quarantine flag. The one-line installer does that itself.
 
 If the plugin never appears in Sound settings, open System Settings, Privacy & Security, and allow the blocked plugin if macOS offers that button. `coreaudiod` on Apple silicon often refuses an ad-hoc plugin until that click.
 

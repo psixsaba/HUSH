@@ -5,8 +5,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
+  audioStatus,
   driverStatus,
-  hostOs,
+  installCable,
   installDriver,
   listenTray,
   listDevices,
@@ -21,6 +22,7 @@ import {
   stats,
   stop,
   update,
+  type AudioStatus,
   type DeviceLists,
   type DriverStatus,
   type NsBackend,
@@ -86,7 +88,12 @@ export function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [reading, setReading] = useState<SessionStats>(emptyStats);
   const [driver, setDriver] = useState<DriverStatus>({ microphone: false, speaker: false });
-  const [os, setOs] = useState("browser");
+  const [audio, setAudio] = useState<AudioStatus>({
+    route: "driver",
+    cable_present: false,
+    capture_label: "HUSH Microphone",
+    platform: "browser",
+  });
   const [login, setLogin] = useState(savedUi.current.start_on_login);
   const [settings, setSettings] = useState<Settings>({ ...defaultSettings, ...loadSettings() });
   const settingsRef = useRef(settings);
@@ -154,8 +161,8 @@ export function App() {
         }));
       })
       .catch((err: unknown) => setError(String(err)));
-    hostOs().then((name) => {
-      if (!cancel) setOs(name);
+    audioStatus().then((status) => {
+      if (!cancel) setAudio(status);
     }).catch(() => undefined);
     driverStatus().then((status) => {
       if (!cancel) setDriver(status);
@@ -196,6 +203,7 @@ export function App() {
         })
         .catch((err: unknown) => setError(String(err)));
       driverStatus().then(setDriver).catch(() => undefined);
+      audioStatus().then(setAudio).catch(() => undefined);
     }, 200);
     return () => window.clearInterval(timer);
   }, [connected, running]);
@@ -204,6 +212,17 @@ export function App() {
     setLogin(next);
     try {
       await setOpenAtLogin(next);
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function onInstallCable() {
+    setNotice(null);
+    setError(null);
+    try {
+      setNotice(await installCable());
+      setAudio(await audioStatus());
     } catch (err) {
       setError(String(err));
     }
@@ -224,7 +243,9 @@ export function App() {
   const meter = active ? reading : emptyStats;
   const inputLevel = demo ? 0.62 : Math.min(1, meter.input_level * 4);
   const outputLevel = demo ? 0.28 : Math.min(1, meter.output_level * 4);
-  const driverReady = demo || (driver.microphone && driver.speaker);
+  const previewCable = new URLSearchParams(window.location.search).has("vbcable");
+  const vbcable = previewCable || audio.route === "vbcable";
+  const driverReady = demo || (vbcable ? audio.cable_present : driver.microphone && driver.speaker);
   const modelDelay =
     settings.ns_backend === "dpdf_net" || settings.ns_backend === "dpdf_net2"
       ? 50
@@ -247,7 +268,22 @@ export function App() {
         </button>
       </header>
 
-      {!driverReady && (
+      {!driverReady && vbcable && (
+        <section className="banner">
+          <div>
+            <strong>VB-CABLE is not installed.</strong>
+            <p>
+              HUSH downloads it from VB-Audio, checks a pinned SHA-256, and does not turn off Secure Boot. One cable is
+              shared with OBS and similar apps.
+            </p>
+          </div>
+          <Button onClick={() => void onInstallCable()} disabled={!connected && !demo}>
+            Install VB-CABLE
+          </Button>
+        </section>
+      )}
+
+      {!driverReady && !vbcable && (
         <section className="banner">
           <div>
             <strong>Virtual driver is not installed.</strong>
@@ -256,18 +292,6 @@ export function App() {
           <Button onClick={() => void onInstall()} disabled={!connected}>
             Install driver
           </Button>
-        </section>
-      )}
-
-      {os === "windows" && (
-        <section className="banner warn">
-          <div>
-            <strong>Windows Test Mode.</strong>
-            <p>
-              Turn Secure Boot off, then in an elevated PowerShell run <code>bcdedit /set testsigning on</code> and reboot.
-              The desktop shows Test Mode. The installer certificate is a test certificate, not an EV signature.
-            </p>
-          </div>
         </section>
       )}
 
@@ -285,7 +309,15 @@ export function App() {
           <p className={active ? "state on" : "state"}>{active ? "Active" : "Off"}</p>
           <h2>{active ? "HUSH is cleaning audio." : "HUSH is standing by."}</h2>
           <p className="lede">
-            In Zoom, Meet, Discord, or Teams, select <strong>HUSH Microphone</strong> and <strong>HUSH Speaker</strong>.
+            {vbcable ? (
+              <>
+                In Zoom, Meet, Discord, or Teams, select <strong>HUSH Microphone</strong>.
+              </>
+            ) : (
+              <>
+                In Zoom, Meet, Discord, or Teams, select <strong>HUSH Microphone</strong> and <strong>HUSH Speaker</strong>.
+              </>
+            )}
           </p>
           <div className="readouts">
             <Readout label="CPU" value={active ? `${meter.cpu_percent.toFixed(1)}%` : "—"} />
@@ -304,12 +336,19 @@ export function App() {
             checked={settings.enabled}
             onChange={(enabled) => void apply({ ...settings, enabled })}
           />
-          <Toggle
-            label="Clean incoming audio"
-            detail="HUSH Speaker is denoised before it reaches your headphones."
-            checked={settings.clean_incoming}
-            onChange={(clean_incoming) => void apply({ ...settings, clean_incoming })}
-          />
+          {vbcable ? (
+            <p className="hint toggle">
+              Incoming-voice cleaning stays off on Windows. There is no free virtual speaker, and HUSH does not register
+              an audio processing object. Your microphone is still cleaned.
+            </p>
+          ) : (
+            <Toggle
+              label="Clean incoming audio"
+              detail="HUSH Speaker is denoised before it reaches your headphones."
+              checked={settings.clean_incoming}
+              onChange={(clean_incoming) => void apply({ ...settings, clean_incoming })}
+            />
+          )}
           <Toggle
             label="Echo cancellation"
             detail="WebRTC AEC3, using HUSH Speaker as the reference."
@@ -366,6 +405,19 @@ export function App() {
       {!connected && !demo && (
         <p className="hint pad">Preview in the browser. Processing, the tray, and driver install run inside the HUSH app.</p>
       )}
+      <section className="panel about">
+        <h3>About</h3>
+        <p className="hint">
+          Windows audio goes through VB-CABLE, donationware by VB-Audio Software. HUSH does not ship that driver.
+          {" "}
+          <a href="https://vb-audio.com/Cable/">vb-audio.com/Cable</a>
+          {" · "}
+          <a href="https://vb-audio.com/Services/donate.htm">Donate to VB-Audio</a>
+        </p>
+        {vbcable && audio.cable_present && (
+          <p className="hint">VB-CABLE is installed. Select HUSH Microphone in the call app. CABLE Input stays the render endpoint HUSH writes to.</p>
+        )}
+      </section>
       {error && <p className="error pad">{error}</p>}
       {notice && <p className="hint pad">{notice}</p>}
       {meter.error && <p className="error pad">{meter.error}</p>}

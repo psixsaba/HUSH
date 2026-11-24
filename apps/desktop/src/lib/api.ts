@@ -138,6 +138,27 @@ export async function driverStatus(): Promise<DriverStatus> {
   return invoke<DriverStatus>("driver_status");
 }
 
+export interface AudioStatus {
+  route: "vbcable" | "driver";
+  cable_present: boolean;
+  capture_label: string;
+  platform: string;
+}
+
+export async function audioStatus(): Promise<AudioStatus> {
+  if (!inTauri()) {
+    return { route: "driver", cable_present: false, capture_label: "HUSH Microphone", platform: "browser" };
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<AudioStatus>("audio_status");
+}
+
+export async function installCable(): Promise<string> {
+  if (!inTauri()) return "Open the HUSH app to install VB-CABLE.";
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string>("install_cable");
+}
+
 export async function hostOs(): Promise<string> {
   if (!inTauri()) return "browser";
   const { invoke } = await import("@tauri-apps/api/core");

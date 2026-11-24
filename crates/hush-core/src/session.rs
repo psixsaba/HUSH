@@ -30,6 +30,9 @@ pub struct SessionConfig {
     pub bridge_speaker: bool,
     /// Also play the cleaned microphone to the output device.
     pub monitor_cleaned: bool,
+    /// WASAPI loopback of this playback device. Windows VB-CABLE mode uses it
+    /// as the echo reference instead of the virtual speaker.
+    pub loopback_device: Option<String>,
 }
 
 impl Default for SessionConfig {
@@ -42,6 +45,7 @@ impl Default for SessionConfig {
             publish_ring: true,
             bridge_speaker: true,
             monitor_cleaned: false,
+            loopback_device: None,
         }
     }
 }
@@ -102,6 +106,8 @@ pub struct RealtimeSession {
     shared: Arc<Shared>,
     streams: Vec<Stream>,
     worker: Option<JoinHandle<()>>,
+    loopback_stop: Option<Arc<AtomicBool>>,
+    loopback: Option<JoinHandle<()>>,
 }
 
 pub fn list_devices() -> Result<DeviceLists> {
@@ -151,12 +157,35 @@ impl RealtimeSession {
         } else {
             (None, SAMPLE_RATE)
         };
-        let (far_stream, far_rate) = if let Some(far) = far.as_ref() {
-            let (stream, rate) = open_input(far, far_prod, Arc::clone(&shared))?;
-            (Some(stream), rate)
-        } else {
-            (None, SAMPLE_RATE)
-        };
+        let mut far_producer = Some(far_prod);
+        let (far_stream, far_rate, loopback, loopback_stop) =
+            if let Some(name) = config.loopback_device.clone() {
+                let producer = far_producer.take().expect("far producer");
+                #[cfg(windows)]
+                {
+                    let stop = Arc::new(AtomicBool::new(true));
+                    let handle = crate::loopback::spawn(
+                        name,
+                        producer,
+                        Arc::clone(&stop),
+                    )?;
+                    (None, SAMPLE_RATE, Some(handle), Some(stop))
+                }
+                #[cfg(not(windows))]
+                {
+                    let _ = (name, producer);
+                    return Err(Error::msg(
+                        "speaker loopback is the Windows VB-CABLE echo reference",
+                    ));
+                }
+            } else if let Some(far) = far.as_ref() {
+                let producer = far_producer.take().expect("far producer");
+                let (stream, rate) = open_input(far, producer, Arc::clone(&shared))?;
+                (Some(stream), rate, None, None)
+            } else {
+                (None, SAMPLE_RATE, None, None)
+            };
+        drop(far_producer);
 
         input_stream.play()?;
         if let Some(stream) = output_stream.as_ref() {
@@ -170,7 +199,7 @@ impl RealtimeSession {
         let worker_shared = Arc::clone(&shared);
         let pipeline_config = config.pipeline.clone();
         let publish_ring = config.publish_ring;
-        let has_far = far_stream.is_some();
+        let has_far = far_stream.is_some() || loopback.is_some();
         let has_output = output_stream.is_some();
         let worker = thread::Builder::new()
             .name("hush-audio".into())
@@ -207,6 +236,8 @@ impl RealtimeSession {
             shared,
             streams,
             worker: Some(worker),
+            loopback_stop,
+            loopback,
         };
         session.wait_until_ready()?;
         Ok(session)
@@ -273,9 +304,15 @@ impl RealtimeSession {
 
     pub fn stop(&mut self) {
         self.shared.running.store(false, Ordering::Release);
+        if let Some(stop) = &self.loopback_stop {
+            stop.store(false, Ordering::Release);
+        }
         let _ = self.commands.send(Command::Stop);
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
+        }
+        if let Some(loopback) = self.loopback.take() {
+            let _ = loopback.join();
         }
         self.streams.clear();
     }
