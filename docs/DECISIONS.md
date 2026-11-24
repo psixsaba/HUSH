@@ -102,13 +102,27 @@ Intel and Apple Silicon are one plugin. `HUSH_UNIVERSAL=1` passes both architect
 
 Tauri 2, React, TypeScript, Tailwind, and Radix primitives (the shadcn set: button, switch, slider, select, label, card). The window calls the same `RealtimeSession` as the CLI. The browser preview of the Vite app does not process audio; the controls are the real ones once the webview is up.
 
+## cpal 0.16 lists HUSH Speaker
+
+`hush devices` uses cpal. cpal 0.15 asked Core Audio for output formats with the input flag set, so any output that was not the current system default failed `supported_output_configs` and disappeared. system_profiler still showed HUSH Speaker, and Zoom could open it, because they do not use that probe. cpal 0.16 fixes the probe (`audio_unit_from_device` is no longer called with `input = true` for an output). `list_devices` also merges `host.devices()` filtered by `supports_output` / `supports_input`, so a virtual endpoint that one iterator drops is still named. The settings window does not pick a HUSH endpoint as the real microphone or the real speakers.
+
+`scripts/macos/dev-setup-and-test.sh` runs `cargo build -p hush-cli --release` after the tests. `cargo test` builds the test harness, not `target/release/hush`.
+
 ## Windows
 
-The core stays the same crate. The rings are `Local\hush-mic` and `Local\hush-spk`. A kernel miniport in session 0 cannot open those, so `hush service` (and the Tauri app, on Windows) runs in the user session and feeds `\Device\HushVad` with the IOCTLs in `drivers/windows/ioctl.h`. The driver copies that queue into the capture DMA buffer and queues render audio back out. 48 kHz is one sample in, one sample out. Other rates are a zero-order hold.
+The core stays the same crate. The rings are `Local\hush-mic` and `Local\hush-spk`. A kernel miniport in session 0 cannot open those, so `hush service` runs in the user session and feeds `\Device\HushVad` with the IOCTLs in `drivers/windows/ioctl.h`. The driver copies that queue into the capture DMA buffer and queues render audio back out. 48 kHz is one sample in, one sample out. Other rates are a zero-order hold.
 
-The NSIS and MSI packages are Tauri bundle targets. The NSIS hook tells the user the driver is a separate test-signed package. It does not load a `.sys`.
+The file-mapping DACL is set in `CreateFileMapping`, not afterwards. That is the same constraint as the macOS ring: Darwin returns EINVAL from `fchmod` on a POSIX shm fd, and a Windows section keeps the DACL it was created with. The DACL grants the logged-in user, Administrators, and SYSTEM. The view is mapped with `FILE_MAP_READ | FILE_MAP_WRITE`. `FILE_MAP_ALL_ACCESS` also demands `WRITE_DAC`, which a world-readable DACL does not include, so the map would fail for the process that did not create the section. The control device uses the WDK SDDL `SDDL_DEVOBJ_SYS_ALL_ADM_RWX_WORLD_RWX_RES_RWX` for the same reason.
 
-None of that was executed here. There is no WDK on this machine, and CI's `drivers/windows/ci-build.ps1` is the attempt: Chocolatey `windowsdriverkit11`, then winget, and `msbuild` only if a kit appears. If the kit is missing the script exits 0 so the Rust tests stay green. If the kit is present, a compile error fails the job. Test signing and the attestation-versus-HLK choice are in `drivers/windows/README.md`.
+One named mutex, `Local\HushBridge`, decides which process owns the IOCTL loop. Login starts the tray app and `hush.exe service`. The service takes the mutex. The app waits two seconds and skips the loop if the service already has it. Closing the window hides it to the tray. Quit exits the app and leaves the service running.
+
+The NSIS and MSI packages are per-machine Tauri bundles. Both run `install-driver.ps1`, which copies `onnxruntime.dll` next to the executables (the `ort` crate loads it from the exe directory) and calls `hush driver install`. That command trusts the test certificate, stages the inf with `pnputil`, creates the `ROOT\VirtualAudioDriver` node with SetupAPI, and binds the inf with `UpdateDriverForPlugAndPlayDevices`. No GPL devcon is shipped. Uninstall removes the node, every `C:\Windows\INF\oem*.inf` that mentions the driver (pnputil's labels are localized; the file contents are not), and the login registry values.
+
+DPDFNet is resolved from `HUSH_DPDF_ONNX`, `%ProgramData%\HUSH\models`, `XDG_CACHE_HOME`, `%USERPROFILE%\.cache\dpdfnet\models`, and `HOME`. Windows does not set `HOME`. `hush models fetch` writes the Apache-2.0 ONNX into the first of those directories it can create.
+
+CI (`.github/workflows/windows-package.yml`) installs the WDK, compiles `VirtualAudioDriver.sln` Release x64, test-signs the sys and the catalog, runs the Rust tests, and builds the installers. A missing kit or a compile error fails the job. The runner does not reboot into test signing, so it does not load the driver. The steps for a PC, and the EV-plus-attestation path for a real signature, are in `docs/WINDOWS_TEST.md`.
+
+The Windows Rust job has to compile WebRTC's bundled C++ with MSVC. `windows-latest` puts MinGW ahead of `cl`, and Meson then builds Abseil against a WinRT header that does not compile. `scripts/ci/use-msvc.ps1` loads `vcvars64` and drops MinGW from `PATH`. The driver package job runs on `windows-2022` because that image's Visual Studio 2022 is what the WDK registers `WindowsKernelModeDriver10.0` with. The universal Mac plugin forwards both architectures to libASPL with CMake's `LIST_SEPARATOR`. An unquoted `arm64;x86_64` was split, and the x86_64 slice linked an arm64 static library.
 
 ## What was left out on license grounds
 

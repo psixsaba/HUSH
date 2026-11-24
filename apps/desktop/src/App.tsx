@@ -19,6 +19,14 @@ import {
   type Settings,
 } from "@/lib/api";
 
+function hardwareInput(names: string[]): string | null {
+  return names.find((name) => !/hush/i.test(name)) ?? names[0] ?? null;
+}
+
+function hardwareOutput(names: string[]): string | null {
+  return names.find((name) => !/hush speaker/i.test(name)) ?? names[0] ?? null;
+}
+
 const emptyStats: SessionStats = {
   running: false,
   ready: false,
@@ -67,8 +75,8 @@ export function App() {
         setDevices(found);
         setSettings((current) => ({
           ...current,
-          input_device: current.input_device ?? found.inputs[0] ?? null,
-          output_device: current.output_device ?? found.outputs[0] ?? null,
+          input_device: current.input_device ?? hardwareInput(found.inputs),
+          output_device: current.output_device ?? hardwareOutput(found.outputs),
         }));
       })
       .catch((err: unknown) => setError(String(err)));

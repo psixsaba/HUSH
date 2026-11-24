@@ -1,6 +1,6 @@
 # Windows virtual microphone and speaker
 
-The Rust core is the same crate as on macOS. On Windows the ring is a named file mapping, `Local\hush-mic` and `Local\hush-spk`, created by `native/ring/ring.c`. This machine has no Windows Driver Kit, so the kernel driver was not compiled and not test-signed here.
+The Rust core is the same crate as on macOS. On Windows the ring is a named file mapping, `Local\hush-mic` and `Local\hush-spk`, created by `native/ring/ring.c`. GitHub Actions compiles and test-signs the driver. A development PC loads it only with test signing on. [docs/WINDOWS_TEST.md](../../docs/WINDOWS_TEST.md) is the install procedure.
 
 ## Which sample to start from
 
@@ -10,7 +10,7 @@ The Rust core is the same crate as on macOS. On Windows the ring is a named file
 
 `hush service` is that user-mode helper. It has to run in the interactive session, not as LocalSystem, because the rings are `Local\` mappings. The Tauri app starts the same loop on Windows. It reads HUSH Microphone and writes the virtual mic, and it writes HUSH Speaker from the virtual speaker. The desktop app still owns the neural net: it cleans the mic before the ring, and it cleans the speaker after the ring.
 
-CI runs `drivers/windows/ci-build.ps1` on `windows-latest`. The script tries Chocolatey `windowsdriverkit11`, then winget. If the kit is still absent it exits 0. If the kit is present, `msbuild` of `VirtualAudioDriver.sln` (Release, x64, `SignMode=Off`) must succeed. This Linux tree cannot compile the driver.
+`.github/workflows/windows-package.yml` installs the WDK, builds `VirtualAudioDriver.sln` (Release, x64, `SignMode=Off`), test-signs the `.sys` and the catalog, and packages the NSIS and MSI installers. A missing kit or a compile error fails the job. The install steps for a PC are [docs/WINDOWS_TEST.md](../../docs/WINDOWS_TEST.md). `drivers/windows/ci-build.ps1` is that same build, for a machine that already has the kit or can install it.
 
 The helper is the only process that calls `DeviceIoControl`. The app publishes the rings. `ioctl.h` is the contract shared with `crates/hush-core/src/winbridge.rs`: device type `0x8000`, `WRITE_CAPTURE` function `0x800`, `READ_RENDER` function `0x801`, `METHOD_BUFFERED`, 480 mono floats at 48 kHz.
 

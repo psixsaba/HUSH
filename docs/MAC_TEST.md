@@ -10,7 +10,7 @@ From a clean checkout:
 scripts/macos/dev-setup-and-test.sh
 ```
 
-That installs rustup under `~/.cargo` if `rustc` is missing, downloads CMake, Ninja, and Meson into `~/.local/hush-dev` if they are missing, downloads `dpdfnet8_48khz_hr.onnx` into `~/.cache/dpdfnet/models`, builds the arm64 `HUSH.driver`, and runs `cargo test` for the core, the C API, and the CLI.
+That installs rustup under `~/.cargo` if `rustc` is missing, downloads CMake, Ninja, and Meson into `~/.local/hush-dev` if they are missing, downloads `dpdfnet8_48khz_hr.onnx` into `~/.cache/dpdfnet/models`, builds the arm64 `HUSH.driver`, runs `cargo test` for the core, the C API, and the CLI, and then `cargo build -p hush-cli --release`. The test command does not leave `target/release/hush` on disk. The build command does.
 
 ONNX Runtime itself is downloaded by the Rust build. You do not install it separately.
 

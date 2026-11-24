@@ -6,6 +6,8 @@
 node_modules
 dist
 apps/desktop/src-tauri/gen
+apps/desktop/src-tauri/resources/**
+!apps/desktop/src-tauri/resources/README.txt
 
 bench/.cache
 bench/.venv
@@ -16,6 +18,7 @@ drivers/windows/third_party
 
 .idea
 .vscode
+scripts/ci/nm.exe
 *.wav.bak
 **/__pycache__/
 *.pyc

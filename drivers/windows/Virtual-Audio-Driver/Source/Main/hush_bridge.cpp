@@ -1,6 +1,8 @@
 #include "hush_bridge.h"
 #include "../../../ioctl.h"
 
+C_ASSERT(sizeof(HushIoctlAudio) == 12 + (480 * sizeof(float)));
+
 #include <wdmsec.h>
 
 #pragma comment(lib, "wdmsec.lib")
@@ -11,9 +13,10 @@
 static const GUID HUSH_CONTROL_CLASS =
 { 0x8a1c4e20, 0x6b2d, 0x4f51, { 0x9c, 0x11, 0x3a, 0x7e, 0x5b, 0x90, 0x12, 0x44 } };
 
-/* Local audio, same trust as the 0666 shared-memory ring: any logged-in user. */
-static const WCHAR HUSH_DEVICE_SDDL[] =
-    L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;AU)(A;;GRGW;;;WD)";
+/* Local audio, same trust as the 0666 shared-memory ring: SYSTEM, Admins,
+   and any logged-in user. The WDK macro is the known-good form of that DACL;
+   a hand-written SDDL that IoCreateDeviceSecure rejects leaves the app with
+   nothing to open. */
 
 typedef struct HushQueue {
     KSPIN_LOCK Lock;
@@ -199,7 +202,6 @@ static NTSTATUS HushDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP
 NTSTATUS HushInstallBridge(_In_ PDRIVER_OBJECT DriverObject)
 {
     UNICODE_STRING deviceName;
-    UNICODE_STRING sddl;
     NTSTATUS status;
 
     PAGED_CODE();
@@ -209,8 +211,7 @@ NTSTATUS HushInstallBridge(_In_ PDRIVER_OBJECT DriverObject)
 
     RtlInitUnicodeString(&deviceName, L"\\Device\\HushVad");
     RtlInitUnicodeString(&g_Symlink, L"\\DosDevices\\HushVad");
-    RtlInitUnicodeString(&sddl, HUSH_DEVICE_SDDL);
-
+    /* This WDK exports the SDDL as a UNICODE_STRING, not a wide literal. */
     status = IoCreateDeviceSecure(
         DriverObject,
         0,
@@ -218,7 +219,7 @@ NTSTATUS HushInstallBridge(_In_ PDRIVER_OBJECT DriverObject)
         FILE_DEVICE_UNKNOWN,
         FILE_DEVICE_SECURE_OPEN,
         FALSE,
-        &sddl,
+        &SDDL_DEVOBJ_SYS_ALL_ADM_RWX_WORLD_RWX_RES_RWX,
         &HUSH_CONTROL_CLASS,
         &g_ControlDevice);
     if (!NT_SUCCESS(status))

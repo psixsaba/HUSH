@@ -208,26 +208,59 @@ fn model_path(stem: &str) -> Result<PathBuf> {
         )));
     }
     let file_name = format!("{stem}.onnx");
-    let mut candidates = Vec::new();
-    if let Ok(cache) = std::env::var("XDG_CACHE_HOME") {
-        candidates.push(PathBuf::from(cache).join("dpdfnet/models").join(&file_name));
-    }
-    if let Ok(home) = std::env::var("HOME") {
-        candidates.push(
-            PathBuf::from(home)
-                .join(".cache/dpdfnet/models")
-                .join(&file_name),
-        );
-    }
-    candidates.push(PathBuf::from("bench/.cache").join(&file_name));
-    for path in &candidates {
+    for path in model_candidates(&file_name) {
         if path.is_file() {
-            return Ok(path.clone());
+            return Ok(path);
         }
     }
     Err(Error::msg(format!(
-        "{stem} was not found. Download it with `dpdfnet download {stem}` or set {override_var}."
+        "{stem} was not found. Run `hush models fetch`, or set {override_var}. Looked in the user cache and in ProgramData\\HUSH\\models."
     )))
+}
+
+/// Directory `hush models fetch` writes to. The per-machine cache when it
+/// can be created, otherwise the user cache. Windows has no HOME, so the
+/// user cache is `%USERPROFILE%\.cache\dpdfnet\models`.
+pub fn preferred_model_dir() -> PathBuf {
+    model_dirs().into_iter().next().unwrap_or_else(|| PathBuf::from("bench/.cache"))
+}
+
+fn model_candidates(file_name: &str) -> Vec<PathBuf> {
+    let mut paths: Vec<PathBuf> = model_dirs().into_iter().map(|dir| dir.join(file_name)).collect();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            paths.push(dir.join("models").join(file_name));
+            paths.push(dir.join("resources").join("models").join(file_name));
+            paths.push(dir.join(file_name));
+        }
+    }
+    paths.push(PathBuf::from("bench/.cache").join(file_name));
+    paths
+}
+
+fn model_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Ok(program_data) = std::env::var("ProgramData") {
+        dirs.push(PathBuf::from(program_data).join("HUSH").join("models"));
+    }
+    if let Ok(cache) = std::env::var("XDG_CACHE_HOME") {
+        dirs.push(PathBuf::from(cache).join("dpdfnet").join("models"));
+    }
+    if let Ok(home) = std::env::var("USERPROFILE") {
+        dirs.push(PathBuf::from(home).join(".cache").join("dpdfnet").join("models"));
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        dirs.push(PathBuf::from(home).join(".cache").join("dpdfnet").join("models"));
+    }
+    if let (Ok(drive), Ok(path)) = (std::env::var("HOMEDRIVE"), std::env::var("HOMEPATH")) {
+        dirs.push(
+            PathBuf::from(format!("{drive}{path}"))
+                .join(".cache")
+                .join("dpdfnet")
+                .join("models"),
+        );
+    }
+    dirs
 }
 
 fn spec_bins(session: &Session) -> Result<usize> {
@@ -299,6 +332,18 @@ fn model2_file_exists() -> bool {
 mod tests {
     use super::*;
     use std::time::Instant;
+
+    #[test]
+    fn model_dirs_include_the_user_cache() {
+        let dirs = model_dirs();
+        assert!(
+            dirs.iter().any(|dir| {
+                let text = dir.to_string_lossy();
+                text.contains("dpdfnet") || text.contains("HUSH")
+            }),
+            "model dirs were {dirs:?}"
+        );
+    }
 
     #[test]
     fn hop_is_finite_and_reports_frame_time() {

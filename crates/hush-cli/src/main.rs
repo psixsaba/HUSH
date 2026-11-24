@@ -6,6 +6,9 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+#[cfg(windows)]
+mod winsetup;
+
 use clap::{Parser, Subcommand, ValueEnum};
 use hush_core::{
     read_wav_mono, write_wav_mono, list_devices, NsBackend, Pipeline, PipelineConfig,
@@ -31,9 +34,43 @@ enum Command {
     Batch(BatchArgs),
     /// Shuttle the virtual microphone and speaker through the Windows driver IOCTL.
     Service,
-    /// Check the ring, per-frame CPU, and, on macOS, that coreaudiod lists HUSH.
+    /// Install or remove the test-signed virtual audio driver.
+    Driver(DriverArgs),
+    /// Download the DPDFNet weights into the cache the pipeline reads.
+    Models(ModelsArgs),
+    /// Check the ring, per-frame CPU, and that the virtual devices are present.
     #[command(name = "selftest")]
     SelfTest,
+}
+
+#[derive(Parser)]
+struct DriverArgs {
+    #[command(subcommand)]
+    action: DriverAction,
+}
+
+#[derive(Subcommand)]
+enum DriverAction {
+    /// Copy the test certificate, create the root device, and register login start.
+    Install {
+        /// Directory with VirtualAudioDriver.inf, the .sys, the .cat, and HushTest.cer.
+        #[arg(long)]
+        package: Option<PathBuf>,
+    },
+    /// Remove the device node, the driver package, and the login entries.
+    Uninstall,
+}
+
+#[derive(Parser)]
+struct ModelsArgs {
+    #[command(subcommand)]
+    action: ModelsAction,
+}
+
+#[derive(Subcommand)]
+enum ModelsAction {
+    /// Download dpdfnet8_48khz_hr.onnx (Apache-2.0).
+    Fetch,
 }
 
 #[derive(Parser)]
@@ -133,6 +170,8 @@ fn main() -> ExitCode {
         Command::Run(args) => run(args),
         Command::Batch(args) => batch(args),
         Command::Service => service(),
+        Command::Driver(args) => driver(args),
+        Command::Models(args) => models(args),
         Command::SelfTest => selftest(),
     }
 }
@@ -267,15 +306,110 @@ fn listed_devices() -> Result<String, String> {
             "devices: coreaudiod lists HUSH Microphone and HUSH Speaker".into(),
         );
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
     {
-        Ok("devices: skipped (coreaudiod only exists on macOS)".into())
+        hush_core::windows_driver_selftest().map_err(|err| err.to_string())
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    {
+        Ok("devices: skipped (virtual endpoints are checked on macOS and Windows)".into())
+    }
+}
+
+fn driver(args: DriverArgs) -> ExitCode {
+    match args.action {
+        DriverAction::Install { package } => driver_install(package),
+        DriverAction::Uninstall => driver_uninstall(),
+    }
+}
+
+fn driver_install(package: Option<PathBuf>) -> ExitCode {
+    #[cfg(windows)]
+    {
+        match crate::winsetup::install(package.as_deref()) {
+            Ok(message) => {
+                println!("{message}");
+                ExitCode::SUCCESS
+            }
+            Err(err) => {
+                eprintln!("hush: {err}");
+                ExitCode::from(1)
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = package;
+        eprintln!("hush driver install is the Windows virtual-audio package");
+        ExitCode::from(2)
+    }
+}
+
+fn driver_uninstall() -> ExitCode {
+    #[cfg(windows)]
+    {
+        match crate::winsetup::uninstall() {
+            Ok(message) => {
+                println!("{message}");
+                ExitCode::SUCCESS
+            }
+            Err(err) => {
+                eprintln!("hush: {err}");
+                ExitCode::from(1)
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        eprintln!("hush driver uninstall is the Windows virtual-audio package");
+        ExitCode::from(2)
+    }
+}
+
+fn models(args: ModelsArgs) -> ExitCode {
+    match args.action {
+        ModelsAction::Fetch => fetch_model(),
+    }
+}
+
+fn fetch_model() -> ExitCode {
+    let dir = hush_core::preferred_model_dir();
+    if let Err(err) = std::fs::create_dir_all(&dir) {
+        eprintln!("hush: cannot create {}: {err}", dir.display());
+        return ExitCode::from(1);
+    }
+    let dest = dir.join("dpdfnet8_48khz_hr.onnx");
+    let url = "https://huggingface.co/Ceva-IP/DPDFNet/resolve/main/onnx/dpdfnet8_48khz_hr.onnx?download=true";
+    println!("downloading DPDFNet8 to {}", dest.display());
+    let curl = if cfg!(windows) { "curl.exe" } else { "curl" };
+    let status = std::process::Command::new(curl)
+        .args(["-fL", "--retry", "3", "-o"])
+        .arg(&dest)
+        .arg(url)
+        .status();
+    match status {
+        Ok(status) if status.success() && dest.is_file() => {
+            println!("model: {}", dest.display());
+            ExitCode::SUCCESS
+        }
+        Ok(status) => {
+            eprintln!("hush: curl exited with {status}");
+            ExitCode::from(1)
+        }
+        Err(err) => {
+            eprintln!("hush: could not run {curl}: {err}");
+            ExitCode::from(1)
+        }
     }
 }
 
 fn service() -> ExitCode {
     #[cfg(windows)]
     {
+        let Some(_bridge) = hush_core::acquire_bridge() else {
+            println!("hush service: the bridge is already running");
+            return ExitCode::SUCCESS;
+        };
         let stop = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&stop);
         let _ = ctrlc::set_handler(move || flag.store(true, Ordering::SeqCst));

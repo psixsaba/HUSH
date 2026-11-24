@@ -98,15 +98,21 @@ npm run tauri dev    # the shell, wired to the core
 
 ### Windows
 
+The installable build is the pre-release `v0.1.0-windows-test`. The steps, including test signing and Secure Boot, are [docs/WINDOWS_TEST.md](docs/WINDOWS_TEST.md).
+
 ```powershell
-# Rust stable, Visual Studio Build Tools, Meson, Ninja.
-cargo build -p hush-cli -p hush-desktop --release
-# NSIS and MSI, from apps/desktop, once the frontend has been built:
-npm install
+# Rust stable, Visual Studio Build Tools, Meson, Ninja, and the WDK for the driver.
+cargo test -p hush-core -p hush-ffi -p hush-cli --release
+cargo build -p hush-cli --release
+drivers\windows\install-wdk.ps1
+drivers\windows\build-driver.ps1
+cd apps\desktop
+npm ci
+$env:HUSH_DRIVER_DIR = "..\..\dist\driver"
 npm run tauri build
 ```
 
-`hush service` copies the shared-memory rings through `\\.\HushVad`. The Tauri app starts that loop itself. The driver build, test signing, and why the helper has to run in the user session are in [drivers/windows/README.md](drivers/windows/README.md). CI tries to install the WDK and compile the `.sys`. This Linux tree did not.
+`hush service` copies the shared-memory rings through `\\.\HushVad` in the interactive session. The installer also starts that process at login. GitHub Actions installs the WDK, compiles the driver, test-signs it, and builds the NSIS and MSI packages. The runner does not load the `.sys`.
 
 ## Use
 
@@ -147,11 +153,11 @@ On a Mac:
 - Start HUSH, select the pair in a call, and confirm the other side hears the cleaned mic and you hear them.
 - Re-measure CPU on Apple Silicon. The default here is DPDFNet8. The budget used on this machine is a p95 frame under 8 ms. One hop was 3.2 ms.
 
-On a PC:
+On a PC, after the GitHub Actions build:
 
-- Build the core with the MSVC toolchain. `npm run tauri build` in `apps/desktop` produces the NSIS and MSI packages.
-- `drivers/windows/ci-build.ps1` installs the WDK when it can and compiles `VirtualAudioDriver.sln`. It was not run here.
-- Test-sign the driver, install it, run HUSH in the same session, and confirm the two endpoints enumerate. The steps are in `drivers/windows/README.md`.
+- Install from the `v0.1.0-windows-test` release with test signing on. The steps are [docs/WINDOWS_TEST.md](docs/WINDOWS_TEST.md).
+- `hush selftest` checks the ring, per-frame CPU, both endpoints, and a tone through the driver in each direction.
+- Start HUSH, select the pair in Zoom, Meet, Discord, or Teams, and confirm the other side hears the cleaned mic and you hear them.
 - Attestation signing needs an EV certificate and a Partner Center account. HLK is separate and was not run.
 
 VoiceBank-DEMAND test set, all 824 files, 48 kHz. The WAVs are not in git. PESQ is wideband at 16 kHz and is an internal number only. DNSMOS is P.835. DPDFNet2 and the 16 kHz rows were scored with the Python causal stream, aligned by the measured lag. DPDFNet8, RNNoise, and DeepFilterNet3 are the Rust pipeline. On `p232_001` the Rust DPDFNet8 stream matches that Python stream at correlation 1.000, and Rust DPDFNet2 at the same 50 ms shift is SI-SDR 22.49.

@@ -11,6 +11,7 @@ mod dpdf;
 mod constants;
 mod devices;
 mod error;
+mod ioctl;
 mod ns;
 mod pipeline;
 mod resample;
@@ -21,14 +22,15 @@ mod wav;
 mod winbridge;
 
 pub use constants::{FRAME_SAMPLES, SAMPLE_RATE};
-pub use devices::DeviceLists;
+pub use devices::{is_hush_microphone, is_hush_speaker, DeviceLists};
+pub use dpdf::preferred_model_dir;
 pub use error::{Error, Result};
 pub use ns::{NsBackend, RNNOISE_LATENCY_SAMPLES};
 pub use pipeline::{FrameStats, Pipeline, PipelineConfig, ProcessedAudio, StreamStats};
 pub use ring::{RingAttachment, RingPublisher, MIC_NAME, SPEAKER_NAME};
 pub use session::{list_devices, RealtimeSession, SessionConfig, SessionStats};
 #[cfg(windows)]
-pub use winbridge::run_windows_bridge;
+pub use winbridge::{acquire_bridge, run_windows_bridge, windows_driver_selftest, BridgeGuard};
 pub use wav::{read_wav_mono, write_wav_mono};
 
 pub fn version() -> &'static str {

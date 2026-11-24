@@ -92,6 +92,9 @@ export CARGO_BUILD_JOBS="$jobs"
 
 echo "Building and testing the Rust core, FFI, and CLI"
 cargo test -p hush-core -p hush-ffi -p hush-cli --release -- --test-threads="$jobs"
+# cargo test builds the test harness, not target/release/hush.
+echo "Building the hush CLI"
+cargo build -p hush-cli --release
 
 echo "Building the arm64 HAL plugin"
 (

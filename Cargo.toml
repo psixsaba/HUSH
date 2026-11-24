@@ -7,6 +7,9 @@ members = [
     "apps/desktop/src-tauri",
 ]
 
+[patch.crates-io]
+webrtc-audio-processing-sys = { path = "third_party/webrtc-audio-processing-sys" }
+
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
@@ -16,7 +19,7 @@ publish = false
 [workspace.dependencies]
 cc = "1"
 clap = { version = "4", features = ["derive"] }
-cpal = "0.15"
+cpal = "0.16"
 ctrlc = "3"
 deep-filter-rt = "0.2"
 hound = "3.5"

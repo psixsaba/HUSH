@@ -1,0 +1,116 @@
+name: windows
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    # windows-latest here is Visual Studio 2026. This driver project still
+    # uses the WindowsKernelModeDriver10.0 toolset, which the WDK registers
+    # with Visual Studio 2022. windows-2022 is that image.
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Meson and Ninja
+        run: pip install meson ninja
+      - name: MSVC for Meson
+        shell: pwsh
+        run: scripts/ci/use-msvc.ps1
+      - name: Test the audio core
+        env:
+          CARGO_BUILD_JOBS: 2
+        run: cargo test -p hush-core -p hush-ffi -p hush-cli --release -- --test-threads=8
+      - name: Build the CLI
+        env:
+          CARGO_BUILD_JOBS: 2
+        run: cargo build -p hush-cli --release
+      - name: Self-test on a machine with no HUSH driver
+        shell: pwsh
+        run: |
+          $output = & .\target\release\hush.exe selftest 2>&1 | Out-String
+          Write-Host $output
+          if ($LASTEXITCODE -eq 0) { exit 0 }
+          if ($output -match "ring: wrote samples") { exit 0 }
+          Write-Host "selftest did not reach the ring check"
+          exit 1
+      - name: Install the WDK
+        shell: pwsh
+        run: drivers/windows/install-wdk.ps1
+      - name: Build and test-sign the driver
+        shell: pwsh
+        run: drivers/windows/build-driver.ps1
+      - name: Desktop dependencies
+        working-directory: apps/desktop
+        run: npm ci
+      - name: Tauri installer
+        working-directory: apps/desktop
+        env:
+          CARGO_BUILD_JOBS: 2
+          HUSH_DRIVER_DIR: ${{ github.workspace }}\dist\driver
+        run: npm run tauri build -- --bundles nsis,msi
+      - name: Collect installers
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path target\release\bundle -Recurse -Include *.exe,*.msi | ForEach-Object {
+            Copy-Item $_.FullName dist\
+            Write-Host "installer $($_.FullName)"
+          }
+          Copy-Item dist\driver\HushTest.cer dist\HushTest.cer -Force
+          Get-ChildItem dist | Select-Object Name, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hush-windows-test
+          if-no-files-found: error
+          path: |
+            dist/*.exe
+            dist/*.msi
+            dist/HUSH-driver-x64.zip
+            dist/HushTest.cer
+
+  release:
+    needs: package
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: hush-windows-test
+          path: dist
+      - name: List release files
+        run: ls -l dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.0-windows-test
+          name: HUSH 0.1.0 for Windows (test signing)
+          prerelease: true
+          generate_release_notes: false
+          body: |
+            Test-signed Windows build of HUSH. This is not a production driver signature.
+
+            Install steps are in `docs/WINDOWS_TEST.md` on this tag. Short version:
+
+            1. Turn Secure Boot off.
+            2. From an elevated PowerShell: `bcdedit /set testsigning on`, then reboot. The desktop shows Test Mode.
+            3. Run the NSIS setup exe (or the MSI). It installs the app, `hush.exe`, the ONNX Runtime DLL, and the virtual audio driver.
+            4. In Sound settings, select **HUSH Microphone** and **HUSH Speaker**.
+            5. `hush selftest` should exit 0.
+
+            The zip is the driver package (inf, sys, cat, test certificate, pfx). The certificate password is `hush-test`.
+
+            A real call in Zoom, Meet, Discord, or Teams still has to be confirmed on a Windows PC. This release was built and signed on a GitHub Actions runner. The runner does not load the driver.
+          files: dist/*
+          fail_on_unmatched_files: true

@@ -13,7 +13,7 @@ tauri-build = { version = "2", features = [] }
 hush-core = { path = "../../../crates/hush-core" }
 serde.workspace = true
 serde_json.workspace = true
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 
 [features]
 default = ["custom-protocol"]
