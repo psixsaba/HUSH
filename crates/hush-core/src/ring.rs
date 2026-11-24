@@ -344,11 +344,15 @@ mod tests {
     #[test]
     fn long_shm_name_is_rejected() {
         let name = format!("/{}", "a".repeat(40));
-        let err = RingPublisher::create_named(&name).unwrap_err();
-        let text = err.to_string();
-        assert!(
-            text.contains("31") && text.contains(&name),
-            "error was {text}"
-        );
+        match RingPublisher::create_named(&name) {
+            Err(err) => {
+                let text = err.to_string();
+                assert!(
+                    text.contains("31") && text.contains(&name),
+                    "error was {text}"
+                );
+            }
+            Ok(_) => panic!("a shm name longer than 31 characters must be rejected"),
+        }
     }
 }
