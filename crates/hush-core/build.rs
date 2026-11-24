@@ -9,4 +9,7 @@ fn main() {
         .compile("hush_ring");
     println!("cargo:rerun-if-changed=../../native/ring/ring.c");
     println!("cargo:rerun-if-changed=../../native/ring/hush_ring.h");
+    if std::env::var("CARGO_CFG_TARGET_OS").ok().as_deref() == Some("windows") {
+        println!("cargo:rustc-link-lib=advapi32");
+    }
 }

@@ -12,18 +12,21 @@
  * buffer so the driver does not touch a user pointer directly.
  */
 
-#include <stdint.h>
-
 #if defined(_NTDDK_) || defined(_WDMDDK_)
-/* Kernel builds already have CTL_CODE from devioctl.h. */
+/* Kernel builds already have CTL_CODE from devioctl.h. ULONG is 32-bit. */
+typedef ULONG hush_u32;
 #elif defined(_WIN32)
+#include <stdint.h>
 #include <winioctl.h>
+typedef uint32_t hush_u32;
 #else
+#include <stdint.h>
 #define FILE_DEVICE_UNKNOWN 0x00000022
 #define METHOD_BUFFERED 0
 #define FILE_ANY_ACCESS 0
 #define CTL_CODE(DeviceType, Function, Method, Access) \
     (((DeviceType) << 16) | ((Access) << 14) | ((Function) << 2) | (Method))
+typedef uint32_t hush_u32;
 #endif
 
 #define HUSH_DEVICE_TYPE 0x8000
@@ -33,10 +36,11 @@
 #define HUSH_IOCTL_READ_RENDER \
     CTL_CODE(HUSH_DEVICE_TYPE, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+/* 12 byte header + 480 mono floats. Must match HushIoctlAudio in winbridge.rs. */
 typedef struct HushIoctlAudio {
-    uint32_t sample_rate;
-    uint32_t channels;
-    uint32_t frames;
+    hush_u32 sample_rate;
+    hush_u32 channels;
+    hush_u32 frames;
     float samples[480];
 } HushIoctlAudio;
 

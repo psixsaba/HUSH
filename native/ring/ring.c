@@ -10,6 +10,7 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <sddl.h>
 #include <process.h>
 #define hush_getpid _getpid
 #else
@@ -131,6 +132,42 @@ static void hush_ring_win_name(const char *name, char *out, size_t out_len)
     snprintf(out, out_len, "Local\\%s", bare);
 }
 
+/* The DACL has to be set in CreateFileMapping. A later SetNamedSecurityInfo
+   is the Windows version of Darwin's fchmod-on-shm, which returns EINVAL:
+   the creator's default DACL does not let a medium-integrity process map a
+   section that an elevated process created. FILE_MAP_ALL_ACCESS also asks
+   for WRITE_DAC, so a 0666-style DACL then fails the map. Read|write is the
+   access the ring actually uses. */
+static HANDLE hush_ring_create_mapping(const char *winname)
+{
+    SECURITY_ATTRIBUTES sa;
+    PSECURITY_DESCRIPTOR sd = NULL;
+    HANDLE mapping;
+    memset(&sa, 0, sizeof sa);
+    sa.nLength = sizeof sa;
+    if (ConvertStringSecurityDescriptorToSecurityDescriptorA(
+            "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;AU)(A;;GA;;;WD)",
+            SDDL_REVISION_1,
+            &sd,
+            NULL)) {
+        sa.lpSecurityDescriptor = sd;
+    }
+    mapping = CreateFileMappingA(
+        INVALID_HANDLE_VALUE,
+        sd ? &sa : NULL,
+        PAGE_READWRITE,
+        0,
+        (DWORD)sizeof(HushRingShared),
+        winname);
+    if (!mapping) {
+        hush_ring_set_error("shared memory create");
+    }
+    if (sd) {
+        LocalFree(sd);
+    }
+    return mapping;
+}
+
 static HushRing *hush_ring_map_handle(HANDLE mapping, int initialize)
 {
     if (!mapping) {
@@ -143,8 +180,9 @@ static HushRing *hush_ring_map_handle(HANDLE mapping, int initialize)
     }
     ring->mapping = mapping;
     ring->map_len = sizeof(HushRingShared);
-    void *mapped = MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, ring->map_len);
+    void *mapped = MapViewOfFile(mapping, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, ring->map_len);
     if (!mapped) {
+        hush_ring_set_error("shared memory map");
         CloseHandle(mapping);
         free(ring);
         return NULL;
@@ -251,11 +289,7 @@ HushRing *hush_ring_create_named(const char *name)
 #ifdef _WIN32
     char winname[96];
     hush_ring_win_name(name, winname, sizeof winname);
-    HANDLE mapping = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0,
-        (DWORD)sizeof(HushRingShared), winname);
-    if (!mapping) {
-        hush_ring_set_error("shared memory create");
-    }
+    HANDLE mapping = hush_ring_create_mapping(winname);
     return hush_ring_map_handle(mapping, 1);
 #else
     /* Not O_EXCL: the plugin may already have this name mapped. */
@@ -299,7 +333,10 @@ HushRing *hush_ring_attach_named(const char *name)
 #ifdef _WIN32
     char winname[96];
     hush_ring_win_name(name, winname, sizeof winname);
-    HANDLE mapping = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, winname);
+    HANDLE mapping = OpenFileMappingA(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, winname);
+    if (!mapping) {
+        hush_ring_set_error("shared memory open");
+    }
     HushRing *ring = hush_ring_map_handle(mapping, 0);
     if (ring && (ring->shared->magic != HUSH_RING_MAGIC || ring->shared->version != HUSH_RING_VERSION)) {
         hush_ring_destroy(ring);

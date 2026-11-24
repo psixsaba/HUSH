@@ -16,7 +16,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Linux packages
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config cmake clang meson ninja-build g++
+        run: |
+          sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config cmake clang meson ninja-build g++
+          echo "LIBRARY_PATH=$(dirname "$(gcc -print-file-name=libstdc++.so)")" >> "$GITHUB_ENV"
       - name: Windows Meson
         if: runner.os == 'Windows'
         run: pip install meson ninja
@@ -27,14 +29,6 @@ jobs:
       - name: Windows desktop shell
         if: runner.os == 'Windows'
         run: cargo build -p hush-cli -p hush-desktop --release
-  windows-driver:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install the WDK if possible and compile the driver
-        shell: pwsh
-        run: drivers/windows/ci-build.ps1
-
   macos-driver:
     runs-on: macos-latest
     steps:

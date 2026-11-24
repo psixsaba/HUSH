@@ -158,9 +158,44 @@ fn session_stats(state: tauri::State<AppState>) -> Result<Option<SessionStats>, 
     rx.recv().map(Some).map_err(|err| err.to_string())
 }
 
+fn tray(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::TrayIconBuilder;
+    use tauri::Manager;
+
+    let show = MenuItem::with_id(app, "show", "Open HUSH", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &quit])?;
+    let mut builder = TrayIconBuilder::with_id("hush")
+        .tooltip("HUSH")
+        .menu(&menu)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "quit" => app.exit(0),
+            "show" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            _ => {}
+        });
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder.build(app)?;
+    Ok(())
+}
+
 pub fn run() {
     #[cfg(windows)]
     std::thread::spawn(|| {
+        // The login task starts `hush service` in this session. Give it the
+        // bridge mutex. If it is not there, the window owns the loop.
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let Some(_guard) = hush_core::acquire_bridge() else {
+            return;
+        };
         let stop = std::sync::atomic::AtomicBool::new(false);
         let _ = hush_core::run_windows_bridge(&stop);
     });
@@ -176,6 +211,16 @@ pub fn run() {
             update_settings,
             session_stats
         ])
+        .setup(|app| {
+            tray(app)?;
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .run(tauri::generate_context!())
         .expect("Hush failed to start");
 }

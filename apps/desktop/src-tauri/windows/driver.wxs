@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <CustomAction
+      Id="HushInstallDriver"
+      Directory="INSTALLDIR"
+      Execute="deferred"
+      Impersonate="no"
+      Return="ignore"
+      ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLDIR]resources\install-driver.ps1&quot;" />
+    <CustomAction
+      Id="HushUninstallDriver"
+      Directory="INSTALLDIR"
+      Execute="deferred"
+      Impersonate="no"
+      Return="ignore"
+      ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLDIR]resources\install-driver.ps1&quot; -Uninstall" />
+    <InstallExecuteSequence>
+      <Custom Action="HushInstallDriver" After="InstallFiles">NOT Installed AND NOT REMOVE</Custom>
+      <Custom Action="HushUninstallDriver" Before="RemoveFiles">REMOVE="ALL"</Custom>
+    </InstallExecuteSequence>
+  </Fragment>
+</Wix>
