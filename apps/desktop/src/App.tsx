@@ -7,7 +7,6 @@ import { Switch } from "@/components/ui/switch";
 import {
   audioStatus,
   driverStatus,
-  hostOs,
   installCable,
   installDriver,
   listenTray,
@@ -89,7 +88,6 @@ export function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [reading, setReading] = useState<SessionStats>(emptyStats);
   const [driver, setDriver] = useState<DriverStatus>({ microphone: false, speaker: false });
-  const [os, setOs] = useState("browser");
   const [audio, setAudio] = useState<AudioStatus>({
     route: "driver",
     cable_present: false,
@@ -163,9 +161,6 @@ export function App() {
         }));
       })
       .catch((err: unknown) => setError(String(err)));
-    hostOs().then((name) => {
-      if (!cancel) setOs(name);
-    }).catch(() => undefined);
     audioStatus().then((status) => {
       if (!cancel) setAudio(status);
     }).catch(() => undefined);

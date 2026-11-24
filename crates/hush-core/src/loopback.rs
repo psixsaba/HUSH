@@ -50,7 +50,10 @@ pub fn spawn(
 fn open_loopback(
     device_name: &str,
 ) -> Result<(wasapi::AudioClient, wasapi::AudioCaptureClient, usize, usize)> {
-    initialize_mta().map_err(|err| Error::msg(format!("COM init failed: {err}")))?;
+    let com = initialize_mta();
+    if com.is_err() {
+        return Err(Error::msg(format!("COM init failed: {com:?}")));
+    }
     let collection = DeviceCollection::new(&Direction::Render)
         .map_err(|err| Error::msg(format!("playback devices: {err}")))?;
     let mut found = None;
