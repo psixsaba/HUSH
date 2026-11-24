@@ -38,6 +38,7 @@ enum Command {
     /// or run the VB-CABLE engine when that driver is not loaded.
     Service,
     /// Download, check, and install VB-CABLE, or remove it.
+    #[command(name = "vbcable")]
     VbCable(VbCableArgs),
     /// Install or remove the test-signed virtual audio driver.
     Driver(DriverArgs),
