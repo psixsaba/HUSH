@@ -66,10 +66,17 @@ if (-not $llvmNm) {
 if (-not $llvmNm) {
     throw "llvm-nm.exe was not found. The WebRTC build prefixes symbols with nm."
 }
-$nmCmd = Join-Path $wrapper "nm.cmd"
 $nmSource = if ($llvmNm.Source) { $llvmNm.Source } else { $llvmNm.FullName }
-[System.IO.File]::WriteAllText($nmCmd, "@echo off`r`n`"$nmSource`" %*`r`n")
-Write-Host "nm wrapper: $nmCmd -> $nmSource"
+# Rust's process spawn looks for nm.exe. A .cmd wrapper is not found.
+$nmExe = Join-Path $wrapper "nm.exe"
+Copy-Item -Force $nmSource $nmExe
+Write-Host "nm.exe: $nmExe copied from $nmSource"
+$objcopy = Get-ChildItem "$env:USERPROFILE\.rustup\toolchains" -Recurse -Filter "rust-objcopy.exe" -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+if (-not $objcopy) {
+    throw "rust-objcopy.exe is missing. Install the llvm-tools rustup component."
+}
+Write-Host "rust-objcopy: $($objcopy.FullName)"
 $cl = (Get-Command cl.exe).Source
 $cxxBat = Join-Path $env:RUNNER_TEMP "hush-cl-cxx20.cmd"
 # Meson appends /std:c++17. MSVC keeps the last /std, so this wrapper adds c++20 at the end.
