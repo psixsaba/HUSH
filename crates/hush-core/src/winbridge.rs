@@ -11,7 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, StreamTrait};
-use cpal::{FromSample, SampleFormat, Stream, StreamConfig};
+use cpal::{FromSample, Sample, SampleFormat, Stream, StreamConfig};
 
 use crate::constants::FRAME_SAMPLES;
 use crate::devices::{self, is_hush_microphone, is_hush_speaker};
