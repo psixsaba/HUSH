@@ -202,7 +202,6 @@ static NTSTATUS HushDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _Inout_ PIRP
 NTSTATUS HushInstallBridge(_In_ PDRIVER_OBJECT DriverObject)
 {
     UNICODE_STRING deviceName;
-    UNICODE_STRING sddl;
     NTSTATUS status;
 
     PAGED_CODE();
@@ -212,8 +211,7 @@ NTSTATUS HushInstallBridge(_In_ PDRIVER_OBJECT DriverObject)
 
     RtlInitUnicodeString(&deviceName, L"\\Device\\HushVad");
     RtlInitUnicodeString(&g_Symlink, L"\\DosDevices\\HushVad");
-    RtlInitUnicodeString(&sddl, SDDL_DEVOBJ_SYS_ALL_ADM_RWX_WORLD_RWX_RES_RWX);
-
+    /* This WDK exports the SDDL as a UNICODE_STRING, not a wide literal. */
     status = IoCreateDeviceSecure(
         DriverObject,
         0,
@@ -221,7 +219,7 @@ NTSTATUS HushInstallBridge(_In_ PDRIVER_OBJECT DriverObject)
         FILE_DEVICE_UNKNOWN,
         FILE_DEVICE_SECURE_OPEN,
         FALSE,
-        &sddl,
+        &SDDL_DEVOBJ_SYS_ALL_ADM_RWX_WORLD_RWX_RES_RWX,
         &HUSH_CONTROL_CLASS,
         &g_ControlDevice);
     if (!NT_SUCCESS(status))
