@@ -32,7 +32,7 @@ jobs:
         run: scripts/ci/use-msvc.ps1
       - name: macOS Meson
         if: runner.os == 'macOS'
-        run: pip3 install meson ninja
+        run: pip3 install --break-system-packages meson ninja
       - name: Test the audio core
         env:
           CARGO_BUILD_JOBS: 2
@@ -51,6 +51,6 @@ jobs:
           lipo -info drivers/macos/build/HUSH.driver/Contents/MacOS/HUSH
       - uses: dtolnay/rust-toolchain@stable
       - name: macOS Meson
-        run: pip3 install meson ninja
+        run: pip3 install --break-system-packages meson ninja
       - name: Check the desktop shell
         run: cargo check -p hush-desktop --release
