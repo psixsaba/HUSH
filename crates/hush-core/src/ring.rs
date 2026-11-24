@@ -48,7 +48,8 @@ impl RingPublisher {
         let raw = unsafe { hush_ring_create_named(c_name.as_ptr()) };
         if raw.is_null() {
             return Err(Error::msg(format!(
-                "failed to create the shared memory segment {name}"
+                "failed to create the shared memory segment {name}: {}",
+                last_error()
             )));
         }
         Ok(Self { raw })
@@ -79,6 +80,19 @@ impl RingPublisher {
 
     pub fn resyncs(&self) -> u64 {
         unsafe { hush_ring_resyncs(self.raw) }
+    }
+
+    /// Drop the name. An existing mapping, including the plugin's, stays valid.
+    pub fn unlink(name: &str) -> Result<()> {
+        let c_name = std::ffi::CString::new(name).map_err(|_| Error::msg("invalid shared-memory name"))?;
+        let rc = unsafe { hush_ring_unlink(c_name.as_ptr()) };
+        if rc != 0 {
+            return Err(Error::msg(format!(
+                "failed to unlink the shared memory segment {name}: {}",
+                last_error()
+            )));
+        }
+        Ok(())
     }
 
     pub fn shm_name() -> &'static str {
@@ -188,10 +202,22 @@ impl Drop for RingReader<'_> {
     }
 }
 
+fn last_error() -> String {
+    let ptr = unsafe { hush_ring_last_error() };
+    if ptr.is_null() {
+        return "unknown error".into();
+    }
+    unsafe { std::ffi::CStr::from_ptr(ptr) }
+        .to_string_lossy()
+        .into_owned()
+}
+
 extern "C" {
     fn hush_ring_create_named(name: *const c_char) -> *mut HushRing;
     fn hush_ring_attach_named(name: *const c_char) -> *mut HushRing;
     fn hush_ring_destroy(ring: *mut HushRing);
+    fn hush_ring_unlink(name: *const c_char) -> i32;
+    fn hush_ring_last_error() -> *const c_char;
     fn hush_ring_set_active(ring: *mut HushRing, active: i32);
     fn hush_ring_set_muted(ring: *mut HushRing, muted: i32);
     fn hush_ring_set_latency(ring: *mut HushRing, samples: u32);
@@ -214,18 +240,39 @@ extern "C" {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
-    static LOCK: Mutex<()> = Mutex::new(());
+    static NAMES: AtomicU32 = AtomicU32::new(0);
+
+    struct TestSegment {
+        name: String,
+        publisher: RingPublisher,
+    }
+
+    impl TestSegment {
+        fn create() -> Self {
+            let n = NAMES.fetch_add(1, Ordering::Relaxed);
+            let name = format!("/h{:x}{:x}", std::process::id(), n);
+            assert!(name.len() <= 31, "macOS shm names are at most 31 characters");
+            let publisher = RingPublisher::create_named(&name).unwrap();
+            Self { name, publisher }
+        }
+    }
+
+    impl Drop for TestSegment {
+        fn drop(&mut self) {
+            let _ = RingPublisher::unlink(&self.name);
+        }
+    }
 
     #[test]
     fn broadcast_read_underrun_and_resync() {
-        let _guard = LOCK.lock().unwrap();
-        let publisher = RingPublisher::create().unwrap();
+        let segment = TestSegment::create();
+        let publisher = &segment.publisher;
         assert_eq!(RingPublisher::shm_name(), "/hush-mic");
         publisher.set_latency_samples(1440);
 
-        let attachment = RingAttachment::attach().unwrap();
+        let attachment = RingAttachment::attach_named(&segment.name).unwrap();
         let mut reader = attachment.reader().unwrap();
 
         let mut signal = vec![0.0f32; 2000];
@@ -276,5 +323,32 @@ mod tests {
         assert_eq!(missed, 8);
         assert!(silent.iter().all(|s| *s == 0.0));
         assert!(attachment.resyncs() == 0 || publisher.resyncs() == attachment.resyncs());
+    }
+
+    #[test]
+    fn create_reuses_an_existing_segment_without_unlinking() {
+        let n = NAMES.fetch_add(1, Ordering::Relaxed);
+        let name = format!("/h{:x}{:x}", std::process::id(), n);
+        let first = RingPublisher::create_named(&name).unwrap();
+        first.write(&[0.5, -0.5, 0.25]);
+        drop(first);
+        let again = RingPublisher::create_named(&name).unwrap();
+        again.write(&[1.0]);
+        let attachment = RingAttachment::attach_named(&name).unwrap();
+        assert!(attachment.reader().is_ok());
+        drop(again);
+        drop(attachment);
+        RingPublisher::unlink(&name).unwrap();
+    }
+
+    #[test]
+    fn long_shm_name_is_rejected() {
+        let name = format!("/{}", "a".repeat(40));
+        let err = RingPublisher::create_named(&name).unwrap_err();
+        let text = err.to_string();
+        assert!(
+            text.contains("31") && text.contains(&name),
+            "error was {text}"
+        );
     }
 }

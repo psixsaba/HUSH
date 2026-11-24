@@ -52,6 +52,14 @@ HushRing *hush_ring_attach(void);
 
 void hush_ring_destroy(HushRing *ring);
 
+/* Remove the name. Mappings already held by this process or the plugin stay
+   valid until they are destroyed. Returns 0, or -1 on error. ENOENT is success. */
+int hush_ring_unlink(const char *name);
+
+/* Empty string after success. After a NULL create/attach, a short reason
+   including errno ("shared memory sizing: Invalid argument"). */
+const char *hush_ring_last_error(void);
+
 void hush_ring_set_active(HushRing *ring, int active);
 void hush_ring_set_muted(HushRing *ring, int muted);
 void hush_ring_set_latency(HushRing *ring, uint32_t samples);

@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "hush_ring.h"
 
+#include <errno.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,6 +59,38 @@ struct HushRingReader {
     uint64_t read_count;
 };
 
+#if defined(_MSC_VER)
+#define HUSH_THREAD __declspec(thread)
+#else
+#define HUSH_THREAD __thread
+#endif
+
+static HUSH_THREAD char hush_ring_errbuf[192];
+
+static void hush_ring_set_error(const char *what)
+{
+    if (!what) {
+        what = "shared memory";
+    }
+#ifdef _WIN32
+    snprintf(hush_ring_errbuf, sizeof hush_ring_errbuf, "%s: win32 error %lu", what, GetLastError());
+#else
+    {
+        int err = errno;
+        if (err == 0) {
+            snprintf(hush_ring_errbuf, sizeof hush_ring_errbuf, "%s", what);
+            return;
+        }
+        snprintf(hush_ring_errbuf, sizeof hush_ring_errbuf, "%s: %s", what, strerror(err));
+    }
+#endif
+}
+
+const char *hush_ring_last_error(void)
+{
+    return hush_ring_errbuf;
+}
+
 static void hush_ring_zero_header(HushRingShared *s)
 {
     memset(s, 0, sizeof(HushRingShared));
@@ -75,12 +108,20 @@ static void hush_ring_zero_header(HushRingShared *s)
     atomic_store_explicit(&s->flags, 0, memory_order_relaxed);
 }
 
+/* macOS rejects a POSIX shm name longer than 31 characters (SHM_NAME_MAX),
+   and any name with a second slash. Enforce that everywhere so a name that
+   passes in CI also opens on Darwin. */
 static int hush_ring_valid_name(const char *name)
 {
+    size_t length;
     if (!name || name[0] != '/' || name[1] == '\0') {
         return 0;
     }
-    return strlen(name) < 64;
+    length = strlen(name);
+    if (length > 31) {
+        return 0;
+    }
+    return strchr(name + 1, '/') == NULL;
 }
 
 #ifdef _WIN32
@@ -125,13 +166,41 @@ static HushRing *hush_ring_wrap(int fd, int initialize)
     }
     ring->fd = fd;
     ring->map_len = sizeof(HushRingShared);
-    if (ftruncate(fd, (off_t)ring->map_len) != 0) {
+    /* Size a new object only. Darwin's ftruncate returns EINVAL when the
+       POSIX shm object is already this size, and shrinking one that a plugin
+       has mapped is unspecified. Extending a short object is allowed. */
+    {
+        struct stat st;
+        if (fstat(fd, &st) != 0) {
+            hush_ring_set_error("shared memory stat");
+            close(fd);
+            free(ring);
+            return NULL;
+        }
+        if (st.st_size < (off_t)ring->map_len) {
+            if (ftruncate(fd, (off_t)ring->map_len) != 0) {
+                int trunc_err = errno;
+                if (fstat(fd, &st) != 0 || st.st_size < (off_t)ring->map_len) {
+                    errno = trunc_err;
+                    hush_ring_set_error("shared memory sizing");
+                    close(fd);
+                    free(ring);
+                    return NULL;
+                }
+            }
+        }
+    }
+    /* O_CREAT applies the process umask, so 0666 often lands as 0644.
+       The HAL plugin is not this uid and has to write the underrun counter. */
+    if (fchmod(fd, 0666) != 0 && errno != EPERM) {
+        hush_ring_set_error("shared memory mode");
         close(fd);
         free(ring);
         return NULL;
     }
     void *mapped = mmap(NULL, ring->map_len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (mapped == MAP_FAILED) {
+        hush_ring_set_error("shared memory map");
         close(fd);
         free(ring);
         return NULL;
@@ -141,27 +210,55 @@ static HushRing *hush_ring_wrap(int fd, int initialize)
         hush_ring_zero_header(ring->shared);
         atomic_store_explicit(&ring->shared->flags, HUSH_RING_FLAG_ACTIVE, memory_order_release);
     }
+    hush_ring_errbuf[0] = '\0';
     return ring;
 }
 #endif
 
 HushRing *hush_ring_create_named(const char *name)
 {
-    if (!hush_ring_valid_name(name)) {
+    if (!name) {
         name = HUSH_SHM_NAME;
+    } else if (!hush_ring_valid_name(name)) {
+        errno = EINVAL;
+        hush_ring_set_error("shared memory name must be /name, at most 31 characters, with no extra slash");
+        return NULL;
     }
 #ifdef _WIN32
     char winname[96];
     hush_ring_win_name(name, winname, sizeof winname);
     HANDLE mapping = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0,
         (DWORD)sizeof(HushRingShared), winname);
+    if (!mapping) {
+        hush_ring_set_error("shared memory create");
+    }
     return hush_ring_map_handle(mapping, 1);
 #else
     int fd = shm_open(name, O_CREAT | O_RDWR, 0666);
     if (fd < 0) {
+        hush_ring_set_error("shared memory open");
         return NULL;
     }
+    fcntl(fd, F_SETFD, FD_CLOEXEC);
     return hush_ring_wrap(fd, 1);
+#endif
+}
+
+int hush_ring_unlink(const char *name)
+{
+    if (!hush_ring_valid_name(name)) {
+        errno = EINVAL;
+        hush_ring_set_error("shared memory name");
+        return -1;
+    }
+#ifdef _WIN32
+    return 0;
+#else
+    if (shm_unlink(name) != 0 && errno != ENOENT) {
+        hush_ring_set_error("shared memory unlink");
+        return -1;
+    }
+    return 0;
 #endif
 }
 
@@ -188,8 +285,10 @@ HushRing *hush_ring_attach_named(const char *name)
 #else
     int fd = shm_open(name, O_RDWR, 0666);
     if (fd < 0) {
+        hush_ring_set_error("shared memory open");
         return NULL;
     }
+    fcntl(fd, F_SETFD, FD_CLOEXEC);
     struct stat st;
     if (fstat(fd, &st) != 0 || (size_t)st.st_size < sizeof(HushRingShared)) {
         close(fd);
