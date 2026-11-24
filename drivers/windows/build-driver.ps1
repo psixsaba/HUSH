@@ -26,14 +26,21 @@ function Find-SdkTool([string]$Name) {
         "${env:ProgramFiles(x86)}\Windows Kits\10\bin",
         "${env:ProgramFiles}\Windows Kits\10\bin"
     )
+    $hits = @()
     foreach ($root in $roots) {
         if (-not (Test-Path $root)) { continue }
-        $hit = Get-ChildItem $root -Recurse -Filter $Name -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match '\\x64\\' } |
+        $hits += @(Get-ChildItem $root -Recurse -Filter $Name -ErrorAction SilentlyContinue)
+    }
+    # inf2cat.exe ships only in the x86 kit directory. signtool is in x64.
+    foreach ($arch in @("\\x64\\", "\\x86\\")) {
+        $hit = $hits |
+            Where-Object { $_.FullName -match $arch } |
             Sort-Object FullName -Descending |
             Select-Object -First 1
         if ($hit) { return $hit.FullName }
     }
+    $any = $hits | Sort-Object FullName -Descending | Select-Object -First 1
+    if ($any) { return $any.FullName }
     throw "Could not find $Name under the Windows Kits bin directory."
 }
 
@@ -77,9 +84,12 @@ Write-Host "signtool: $signtool"
 & $signtool sign /fd SHA256 /f $pfx /p $password (Join-Path $stage "virtualaudiodriver.sys")
 if ($LASTEXITCODE -ne 0) { throw "signtool failed on the .sys" }
 
+# The INF targets Windows 10.0 build 22000 and later, so a Windows 10 2004
+# (10_VB) or Server 2022 catalog set is rejected. Try Windows 11 sets first.
 $osSets = @(
-    "10_NI_X64,10_VB_X64,Server2022_X64",
-    "10_X64,10_NI_X64",
+    "10_NI_X64",
+    "10_CO_X64,10_NI_X64",
+    "10_NI_X64,10_GE_X64",
     "10_X64"
 )
 $catalogOk = $false

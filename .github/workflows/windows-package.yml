@@ -58,7 +58,7 @@ jobs:
         env:
           CARGO_BUILD_JOBS: 2
           HUSH_DRIVER_DIR: ${{ github.workspace }}\dist\driver
-        run: npm run tauri build
+        run: npm run tauri build -- --bundles nsis,msi
       - name: Collect installers
         shell: pwsh
         run: |

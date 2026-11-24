@@ -13,7 +13,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # windows-latest is Visual Studio 2026. Its STL rejects the runner Clang
+        # during bindgen (STL1000). windows-2022 matches the package job, which
+        # already compiles and tests this tree.
+        os: [ubuntu-latest, macos-latest, windows-2022]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

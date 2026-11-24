@@ -102,7 +102,8 @@ $objNoExt = Join-Path (Split-Path $objcopy.FullName) "rust-objcopy"
 Copy-Item -Force $objcopy.FullName $objNoExt
 Write-Host "rust-objcopy without extension: $objNoExt"
 $env:CXX = $cxxBat
-$env:BINDGEN_EXTRA_CLANG_ARGS = "--target=x86_64-pc-windows-msvc -fms-compatibility -fms-extensions -nobuiltininc"
+$bindgenArgs = "--target=x86_64-pc-windows-msvc -fms-compatibility -fms-extensions -nobuiltininc -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"
+$env:BINDGEN_EXTRA_CLANG_ARGS = $bindgenArgs
 Write-Host "meson wrapper: $wrapper"
 Write-Host "real meson: $($meson.Source)"
 Write-Host "cxx wrapper: $cxxBat"
@@ -121,6 +122,6 @@ if ($env:GITHUB_ENV) {
     Write-Env "CC" "cl.exe"
     Write-Env "CXX" $cxxBat
     Write-Env "HUSH_MESON" $meson.Source
-    Write-Env "BINDGEN_EXTRA_CLANG_ARGS" "--target=x86_64-pc-windows-msvc -fms-compatibility -fms-extensions -nobuiltininc"
+    Write-Env "BINDGEN_EXTRA_CLANG_ARGS" $bindgenArgs
 }
 Write-Host "cl.exe: $((Get-Command cl.exe).Source)"
