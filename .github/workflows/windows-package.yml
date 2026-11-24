@@ -4,9 +4,16 @@ on:
   push:
   pull_request:
 
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   package:
-    runs-on: windows-latest
+    # windows-latest here is Visual Studio 2026. This driver project still
+    # uses the WindowsKernelModeDriver10.0 toolset, which the WDK registers
+    # with Visual Studio 2022. windows-2022 is that image.
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -15,6 +22,9 @@ jobs:
           node-version: 22
       - name: Meson and Ninja
         run: pip install meson ninja
+      - name: MSVC for Meson
+        shell: pwsh
+        run: scripts/ci/use-msvc.ps1
       - name: Test the audio core
         env:
           CARGO_BUILD_JOBS: 2

@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rust:
     strategy:
@@ -22,6 +26,13 @@ jobs:
       - name: Windows Meson
         if: runner.os == 'Windows'
         run: pip install meson ninja
+      - name: Windows MSVC
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: scripts/ci/use-msvc.ps1
+      - name: macOS Meson
+        if: runner.os == 'macOS'
+        run: pip3 install meson ninja
       - name: Test the audio core
         env:
           CARGO_BUILD_JOBS: 2
@@ -37,6 +48,9 @@ jobs:
         run: |
           chmod +x drivers/macos/build.sh
           HUSH_UNIVERSAL=1 drivers/macos/build.sh
+          lipo -info drivers/macos/build/HUSH.driver/Contents/MacOS/HUSH
       - uses: dtolnay/rust-toolchain@stable
+      - name: macOS Meson
+        run: pip3 install meson ninja
       - name: Check the desktop shell
         run: cargo check -p hush-desktop --release

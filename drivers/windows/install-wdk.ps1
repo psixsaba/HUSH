@@ -1,19 +1,24 @@
 # Install the Windows Driver Kit and its Visual Studio toolset on a GitHub runner.
 # The script fails if WindowsKernelModeDriver10.0 is still missing.
 $ErrorActionPreference = "Stop"
+$PSNativeCommandUseErrorActionPreference = $false
+
+function Get-VsInstalls {
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    if (-not (Test-Path $vswhere)) {
+        return @()
+    }
+    $found = & $vswhere -all -products * -property installationPath
+    if (-not $found) { return @() }
+    return @($found)
+}
 
 function Test-Toolset {
-    $roots = @(
-        "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise",
-        "${env:ProgramFiles}\Microsoft Visual Studio\2022\Professional",
-        "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community",
-        "${env:ProgramFiles}\Microsoft Visual Studio\2022\BuildTools",
-        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools"
-    )
-    foreach ($vs in $roots) {
-        $toolset = Join-Path $vs "MSBuild\Microsoft\VC\v170\Platforms\x64\PlatformToolsets\WindowsKernelModeDriver10.0"
-        if (Test-Path $toolset) {
-            Write-Host "WDK toolset: $toolset"
+    foreach ($vs in (Get-VsInstalls)) {
+        $hits = Get-ChildItem -Path $vs -Recurse -Directory -Filter "WindowsKernelModeDriver10.0" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'PlatformToolsets' }
+        foreach ($hit in $hits) {
+            Write-Host "WDK toolset: $($hit.FullName)"
             return $true
         }
     }
@@ -54,12 +59,7 @@ $vsixRoot = "${env:ProgramFiles(x86)}\Windows Kits\10\Vsix"
 if (-not (Test-Path $vsixRoot)) {
     $vsixRoot = "${env:ProgramFiles}\Windows Kits\10\Vsix"
 }
-$vsInstalls = @(
-    "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise",
-    "${env:ProgramFiles}\Microsoft Visual Studio\2022\Professional",
-    "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community",
-    "${env:ProgramFiles}\Microsoft Visual Studio\2022\BuildTools"
-) | Where-Object { Test-Path "$_\Common7\IDE\VSIXInstaller.exe" }
+$vsInstalls = @(Get-VsInstalls) | Where-Object { Test-Path "$_\Common7\IDE\VSIXInstaller.exe" }
 
 if ((Test-Path $vsixRoot) -and $vsInstalls) {
     $vsixFiles = Get-ChildItem $vsixRoot -Filter "*.vsix" -Recurse

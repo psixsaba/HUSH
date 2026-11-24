@@ -122,6 +122,8 @@ DPDFNet is resolved from `HUSH_DPDF_ONNX`, `%ProgramData%\HUSH\models`, `XDG_CAC
 
 CI (`.github/workflows/windows-package.yml`) installs the WDK, compiles `VirtualAudioDriver.sln` Release x64, test-signs the sys and the catalog, runs the Rust tests, and builds the installers. A missing kit or a compile error fails the job. The runner does not reboot into test signing, so it does not load the driver. The steps for a PC, and the EV-plus-attestation path for a real signature, are in `docs/WINDOWS_TEST.md`.
 
+The Windows Rust job has to compile WebRTC's bundled C++ with MSVC. `windows-latest` puts MinGW ahead of `cl`, and Meson then builds Abseil against a WinRT header that does not compile. `scripts/ci/use-msvc.ps1` loads `vcvars64` and drops MinGW from `PATH`. The driver package job runs on `windows-2022` because that image's Visual Studio 2022 is what the WDK registers `WindowsKernelModeDriver10.0` with. The universal Mac plugin forwards both architectures to libASPL with CMake's `LIST_SEPARATOR`. An unquoted `arm64;x86_64` was split, and the x86_64 slice linked an arm64 static library.
+
 ## What was left out on license grounds
 
 - PESQ. The ITU reference is not a permissive license. It is not a dependency and the harness does not compute it. Internal research can add it locally.
