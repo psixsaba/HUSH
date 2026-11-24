@@ -79,9 +79,28 @@ if (-not $objcopy) {
 Write-Host "rust-objcopy: $($objcopy.FullName)"
 $cl = (Get-Command cl.exe).Source
 $cxxBat = Join-Path $env:RUNNER_TEMP "hush-cl-cxx20.cmd"
-# Meson appends /std:c++17. MSVC keeps the last /std, so this wrapper adds c++20 at the end.
-$cxxText = "@echo off`r`n`"$cl`" %* /std:c++20`r`n"
+# The WebRTC build script passes gcc flags to cl. Drop those, and put /std:c++20
+# last so it wins over Meson's /std:c++17.
+$cxxText = @"
+@echo off
+setlocal EnableDelayedExpansion
+set "ARGS="
+:loop
+if "%~1"=="" goto run
+if /I "%~1"=="-Wno-unused-parameter" goto next
+if /I "%~1"=="-std=c++17" goto next
+set ARGS=!ARGS! "%~1"
+:next
+shift
+goto loop
+:run
+"$cl" !ARGS! /std:c++20
+"@
+$cxxText = $cxxText -replace "`n", "`r`n"
 [System.IO.File]::WriteAllText($cxxBat, $cxxText)
+$objNoExt = Join-Path (Split-Path $objcopy.FullName) "rust-objcopy"
+Copy-Item -Force $objcopy.FullName $objNoExt
+Write-Host "rust-objcopy without extension: $objNoExt"
 $env:CXX = $cxxBat
 Write-Host "meson wrapper: $wrapper"
 Write-Host "real meson: $($meson.Source)"
