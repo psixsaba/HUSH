@@ -102,6 +102,7 @@ $objNoExt = Join-Path (Split-Path $objcopy.FullName) "rust-objcopy"
 Copy-Item -Force $objcopy.FullName $objNoExt
 Write-Host "rust-objcopy without extension: $objNoExt"
 $env:CXX = $cxxBat
+$env:BINDGEN_EXTRA_CLANG_ARGS = "--target=x86_64-pc-windows-msvc"
 Write-Host "meson wrapper: $wrapper"
 Write-Host "real meson: $($meson.Source)"
 Write-Host "cxx wrapper: $cxxBat"
