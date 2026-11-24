@@ -133,7 +133,7 @@ pub fn install(package: Option<&Path>) -> Result<String, String> {
     }
     register_login()?;
     let mut message = format!(
-        "driver: installed from {}\nlogin: HUSH and the user-session bridge start at sign-in",
+        "driver: installed from {}\nlogin: the user-session bridge starts at sign-in. Open HUSH and turn on Start on login for the app.",
         dir.display()
     );
     if reboot != 0 {
@@ -159,6 +159,9 @@ pub fn uninstall() -> Result<String, String> {
             "HUSH Bridge",
             "/f",
         ])
+        .status();
+    let _ = Command::new("reg")
+        .args(["delete", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "/v", "HUSH", "/f"])
         .status();
     Ok(format!("removed {removed} device node(s) and {packages} driver package(s); login entries cleared"))
 }
@@ -414,15 +417,9 @@ fn inf_mentions_driver(path: &Path) -> bool {
 
 fn register_login() -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|err| err.to_string())?;
-    let dir = exe.parent().ok_or("hush.exe has no directory")?;
-    let gui = dir.join("HUSH.exe");
-    let gui_cmd = if gui.is_file() {
-        format!("\"{}\"", gui.display())
-    } else {
-        format!("\"{}\"", exe.display())
-    };
     let bridge = format!("\"{}\" service", exe.display());
-    reg_add("HUSH", &gui_cmd)?;
+    // The app's own "start on login" switch writes HKCU. The elevated
+    // installer only starts the driver bridge, which has no window.
     reg_add("HUSH Bridge", &bridge)?;
     Ok(())
 }

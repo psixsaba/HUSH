@@ -67,6 +67,10 @@ pub struct SessionStats {
     pub clean_incoming: bool,
     pub incoming_latency_samples: u32,
     pub incoming_latency_ms: f64,
+    /// RMS of the microphone frame before the pipeline, 0 to 1.
+    pub input_level: f32,
+    /// RMS of the cleaned microphone frame, 0 to 1.
+    pub output_level: f32,
     pub error: Option<String>,
 }
 
@@ -87,6 +91,8 @@ struct Shared {
     buffer_samples: AtomicU32,
     input_drops: AtomicU64,
     output_underruns: AtomicU64,
+    input_level_bits: AtomicU32,
+    output_level_bits: AtomicU32,
     error: Mutex<Option<String>>,
     config: Mutex<PipelineConfig>,
 }
@@ -131,6 +137,8 @@ impl RealtimeSession {
             buffer_samples: AtomicU32::new(0),
             input_drops: AtomicU64::new(0),
             output_underruns: AtomicU64::new(0),
+            input_level_bits: AtomicU32::new(0),
+            output_level_bits: AtomicU32::new(0),
             error: Mutex::new(None),
             config: Mutex::new(config.pipeline.clone()),
         });
@@ -257,6 +265,8 @@ impl RealtimeSession {
             clean_incoming: config.clean_incoming,
             incoming_latency_samples: incoming,
             incoming_latency_ms: incoming as f64 / SAMPLE_RATE as f64 * 1000.0,
+            input_level: f32::from_bits(self.shared.input_level_bits.load(Ordering::Relaxed)),
+            output_level: f32::from_bits(self.shared.output_level_bits.load(Ordering::Relaxed)),
             error: self.shared.error.lock().unwrap().clone(),
         }
     }
@@ -516,6 +526,12 @@ fn worker(
             match pipeline.process_frame(&near_frame, far_ref, &mut out_frame) {
                 Ok(frame_stats) => {
                     shared
+                        .input_level_bits
+                        .store(frame_rms(&near_frame).to_bits(), Ordering::Relaxed);
+                    shared
+                        .output_level_bits
+                        .store(frame_rms(&out_frame).to_bits(), Ordering::Relaxed);
+                    shared
                         .frames
                         .fetch_add(1, Ordering::Relaxed);
                     shared
@@ -566,6 +582,14 @@ fn worker(
     if let Some(publisher) = publisher.as_mut() {
         publisher.set_active(false);
     }
+}
+
+fn frame_rms(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let energy: f32 = samples.iter().map(|sample| sample * sample).sum();
+    (energy / samples.len() as f32).sqrt().clamp(0.0, 1.0)
 }
 
 fn push_output(

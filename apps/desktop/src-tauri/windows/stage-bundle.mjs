@@ -56,5 +56,33 @@ if (existsSync(join(driverDir, "VirtualAudioDriver.inf")) || existsSync(join(dri
   cpSync(driverDir, join(resources, "driver"), { recursive: true });
   console.log("staged driver", driverDir);
 } else {
-  console.log("no driver package at", driverDir);
+  console.log("no Windows driver package at", driverDir);
 }
+
+const macDriver = join(root, "drivers", "macos", "build", "HUSH.driver");
+if (existsSync(macDriver)) {
+  cpSync(macDriver, join(resources, "HUSH.driver"), { recursive: true });
+  console.log("staged", macDriver);
+}
+
+function walkDylibs(dir) {
+  if (!existsSync(dir)) return;
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    let info;
+    try {
+      info = statSync(path);
+    } catch {
+      continue;
+    }
+    if (info.isDirectory()) {
+      if (name === "incremental" || name === ".fingerprint" || name === "build" || name === "bundle") continue;
+      walkDylibs(path);
+      continue;
+    }
+    if (name.includes("onnxruntime") && name.endsWith(".dylib")) {
+      copyIf(path, join(resources, name));
+    }
+  }
+}
+walkDylibs(release);

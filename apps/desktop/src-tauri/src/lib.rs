@@ -3,10 +3,11 @@ use std::sync::Mutex;
 use std::thread::JoinHandle;
 
 use hush_core::{NsBackend, PipelineConfig, RealtimeSession, SessionConfig, SessionStats};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 struct AppState {
     worker: Mutex<Option<Worker>>,
+    power_item: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
 }
 
 struct Worker {
@@ -158,24 +159,82 @@ fn session_stats(state: tauri::State<AppState>) -> Result<Option<SessionStats>, 
     rx.recv().map(Some).map_err(|err| err.to_string())
 }
 
+#[derive(Serialize)]
+struct DriverStatus {
+    microphone: bool,
+    speaker: bool,
+}
+
+#[tauri::command]
+fn driver_status() -> Result<DriverStatus, String> {
+    let lists = hush_core::list_devices().map_err(|err| err.to_string())?;
+    Ok(DriverStatus {
+        microphone: lists.inputs.iter().any(|name| hush_core::is_hush_microphone(name)),
+        speaker: lists.outputs.iter().any(|name| hush_core::is_hush_speaker(name)),
+    })
+}
+
+#[tauri::command]
+fn host_os() -> &'static str {
+    std::env::consts::OS
+}
+
+#[tauri::command]
+fn set_tray_running(state: tauri::State<AppState>, running: bool) -> Result<(), String> {
+    let slot = state.power_item.lock().map_err(|err| err.to_string())?;
+    if let Some(item) = slot.as_ref() {
+        item.set_text(if running { "Turn off" } else { "Turn on" })
+            .map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn set_open_at_login(enabled: bool) -> Result<(), String> {
+    login::set(enabled)
+}
+
+#[tauri::command]
+fn open_at_login() -> Result<bool, String> {
+    login::enabled()
+}
+
+#[tauri::command]
+fn install_driver(app: tauri::AppHandle) -> Result<String, String> {
+    driver_install::run(&app)
+}
+
+fn show_main(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 fn tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
-    use tauri::Manager;
+    use tauri::{Emitter, Manager};
 
+    let power = MenuItem::with_id(app, "power", "Turn on", true, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", "Open HUSH", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &quit])?;
+    let menu = Menu::with_items(app, &[&power, &show, &quit])?;
+    if let Ok(mut slot) = app.state::<AppState>().power_item.lock() {
+        *slot = Some(power);
+    }
     let mut builder = TrayIconBuilder::with_id("hush")
-        .tooltip("HUSH")
+        .tooltip("HUSH is off")
         .menu(&menu)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "quit" => app.exit(0),
-            "show" => {
+            "show" => show_main(app),
+            "power" => {
+                show_main(app);
                 if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.unminimize();
-                    let _ = window.show();
-                    let _ = window.set_focus();
+                    let _ = window.emit("tray-power", ());
                 }
             }
             _ => {}
@@ -203,13 +262,20 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AppState {
             worker: Mutex::new(None),
+            power_item: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             list_devices,
             start_session,
             stop_session,
             update_settings,
-            session_stats
+            session_stats,
+            driver_status,
+            host_os,
+            set_tray_running,
+            set_open_at_login,
+            open_at_login,
+            install_driver
         ])
         .setup(|app| {
             tray(app)?;
@@ -223,4 +289,203 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("Hush failed to start");
+}
+
+mod login {
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    pub fn set(enabled: bool) -> Result<(), String> {
+        #[cfg(target_os = "macos")]
+        {
+            return macos(enabled);
+        }
+        #[cfg(target_os = "windows")]
+        {
+            return windows(enabled);
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            let _ = enabled;
+            Ok(())
+        }
+    }
+
+    pub fn enabled() -> Result<bool, String> {
+        #[cfg(target_os = "macos")]
+        {
+            return Ok(agent_path()?.is_file());
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let output = Command::new("reg")
+                .args(["query", run_key(), "/v", "HUSH"])
+                .output()
+                .map_err(|err| err.to_string())?;
+            return Ok(output.status.success());
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            Ok(false)
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn macos(enabled: bool) -> Result<(), String> {
+        let path = agent_path()?;
+        let label = format!("gui/{}/com.hush.desktop", user_id()?);
+        let _ = Command::new("launchctl").args(["bootout", &label]).status();
+        if !enabled {
+            let _ = std::fs::remove_file(&path);
+            return Ok(());
+        }
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|err| err.to_string())?;
+        }
+        let exe = std::env::current_exe().map_err(|err| err.to_string())?;
+        let xml = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>com.hush.desktop</string>
+<key>ProgramArguments</key><array><string>{}</string></array>
+<key>RunAtLoad</key><true/>
+<key>ProcessType</key><string>Interactive</string>
+</dict></plist>
+"#,
+            xml_escape(&exe.display().to_string())
+        );
+        std::fs::write(&path, xml).map_err(|err| err.to_string())?;
+        let status = Command::new("launchctl")
+            .args(["bootstrap", &format!("gui/{}", user_id()?), &path.display().to_string()])
+            .status()
+            .map_err(|err| err.to_string())?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err("launchctl could not install the login item".into())
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn windows(enabled: bool) -> Result<(), String> {
+        if !enabled {
+            let _ = Command::new("reg").args(["delete", run_key(), "/v", "HUSH", "/f"]).status();
+            return Ok(());
+        }
+        let exe = std::env::current_exe().map_err(|err| err.to_string())?;
+        let value = format!("\"{}\"", exe.display());
+        let status = Command::new("reg")
+            .args(["add", run_key(), "/v", "HUSH", "/t", "REG_SZ", "/d", &value, "/f"])
+            .status()
+            .map_err(|err| err.to_string())?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err("could not write the Windows login entry".into())
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn run_key() -> &'static str {
+        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run"
+    }
+
+    #[cfg(target_os = "macos")]
+    fn agent_path() -> Result<PathBuf, String> {
+        let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_string())?;
+        Ok(PathBuf::from(home).join("Library/LaunchAgents/com.hush.desktop.plist"))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn user_id() -> Result<String, String> {
+        let output = Command::new("id").arg("-u").output().map_err(|err| err.to_string())?;
+        if !output.status.success() {
+            return Err("id -u failed".into());
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn xml_escape(text: &str) -> String {
+        text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    }
+}
+
+mod driver_install {
+    use std::path::Path;
+    use std::process::Command;
+
+    use tauri::Manager;
+
+    pub fn run(app: &tauri::AppHandle) -> Result<String, String> {
+        let resources = app.path().resource_dir().map_err(|err| err.to_string())?;
+        #[cfg(target_os = "macos")]
+        {
+            return macos(&resources);
+        }
+        #[cfg(target_os = "windows")]
+        {
+            return windows(&resources);
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            let _ = resources;
+            Err("Install the driver on macOS or Windows.".into())
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn macos(resources: &Path) -> Result<String, String> {
+        let src = resources.join("HUSH.driver");
+        if !src.join("Contents/MacOS").is_dir() && !src.is_dir() {
+            return Err("This app does not contain HUSH.driver. Open the disk image and run the package.".into());
+        }
+        if !src.is_dir() {
+            return Err(format!("missing {}", src.display()));
+        }
+        let dest = "/Library/Audio/Plug-Ins/HAL/HUSH.driver";
+        let inner = format!(
+            "rm -rf \"{dest}\" && cp -R \"{}\" \"{dest}\" && (killall coreaudiod || true) && echo installed",
+            src.display()
+        );
+        let apple = format!("do shell script \"{}\" with administrator privileges", osa(&inner));
+        let output = Command::new("osascript")
+            .arg("-e")
+            .arg(&apple)
+            .output()
+            .map_err(|err| err.to_string())?;
+        if output.status.success() {
+            Ok("Installed HUSH.driver and restarted coreaudiod. Choose HUSH Microphone and HUSH Speaker in the call app.".into())
+        } else {
+            let err = String::from_utf8_lossy(&output.stderr);
+            Err(format!("macOS did not install the driver. {err}"))
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn windows(resources: &Path) -> Result<String, String> {
+        let script = resources.join("install-driver.ps1");
+        if !script.is_file() {
+            return Err("install-driver.ps1 is not in this app. Reinstall HUSH from the setup exe.".into());
+        }
+        let command = format!(
+            "Start-Process -FilePath powershell.exe -Verb RunAs -Wait -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','{}')",
+            script.display().to_string().replace('\'', "''")
+        );
+        let status = Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &command])
+            .status()
+            .map_err(|err| err.to_string())?;
+        if status.success() {
+            Ok("Windows asked for administrator approval. If Test Mode is on, HUSH Microphone and HUSH Speaker appear after the driver binds.".into())
+        } else {
+            Err("Windows did not start the driver installer.".into())
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn osa(script: &str) -> String {
+        script.replace('\\', "\\\\").replace('"', "\\\"")
+    }
 }

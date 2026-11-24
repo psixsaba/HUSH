@@ -19,6 +19,8 @@ payload="$stage/root"
 mkdir -p "$payload/Library/Audio/Plug-Ins/HAL" "$payload/usr/local/bin" "$payload/usr/local/share/hush"
 cp -R "$driver" "$payload/Library/Audio/Plug-Ins/HAL/"
 cp "$root/scripts/macos/com.hush.desktop.plist" "$payload/usr/local/share/hush/"
+cp "$root/scripts/macos/uninstall-hush.sh" "$payload/usr/local/share/hush/uninstall-hush.sh"
+chmod 755 "$payload/usr/local/share/hush/uninstall-hush.sh"
 if [ -x "$root/target/release/hush" ]; then
     cp "$root/target/release/hush" "$payload/usr/local/bin/hush"
 else
@@ -27,7 +29,7 @@ fi
 mkdir -p "$stage/scripts"
 cat > "$stage/scripts/postinstall" <<'EOF'
 #!/bin/sh
-launchctl kickstart -k system/com.apple.audio.coreaudiod || killall -9 coreaudiod || true
+killall coreaudiod || launchctl kickstart -k system/com.apple.audio.coreaudiod || true
 exit 0
 EOF
 chmod 755 "$stage/scripts/postinstall"
@@ -41,7 +43,7 @@ pkgbuild \
     --root "$payload" \
     --scripts "$stage/scripts" \
     --identifier com.hush.audio \
-    --version 0.1.0 \
+    --version 0.2.0 \
     --install-location / \
-    "$root/dist/HUSH-unsigned.pkg"
-echo "wrote $root/dist/HUSH-unsigned.pkg"
+    "$root/dist/HUSH_0.2.0_macos.pkg"
+echo "wrote $root/dist/HUSH_0.2.0_macos.pkg"
