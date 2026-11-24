@@ -50,10 +50,16 @@ $env:INCLUDE = $include
 $env:LIB = $lib
 $env:LIBPATH = $libpath
 $env:CC = "cl.exe"
-$env:CXX = "cl.exe"
 $env:HUSH_MESON = $meson.Source
+$cl = (Get-Command cl.exe).Source
+$cxxBat = Join-Path $env:RUNNER_TEMP "hush-cl-cxx20.cmd"
+# Meson appends /std:c++17. MSVC keeps the last /std, so this wrapper adds c++20 at the end.
+$cxxText = "@echo off`r`n`"$cl`" %* /std:c++20`r`n"
+[System.IO.File]::WriteAllText($cxxBat, $cxxText)
+$env:CXX = $cxxBat
 Write-Host "meson wrapper: $wrapper"
 Write-Host "real meson: $($meson.Source)"
+Write-Host "cxx wrapper: $cxxBat"
 
 function Write-Env([string]$Name, [string]$Value) {
     if ($null -eq $Value) { return }
@@ -67,7 +73,7 @@ if ($env:GITHUB_ENV) {
     Write-Env "LIB" $lib
     Write-Env "LIBPATH" $libpath
     Write-Env "CC" "cl.exe"
-    Write-Env "CXX" "cl.exe"
+    Write-Env "CXX" $cxxBat
     Write-Env "HUSH_MESON" $meson.Source
 }
 Write-Host "cl.exe: $((Get-Command cl.exe).Source)"

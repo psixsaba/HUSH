@@ -11,4 +11,5 @@ real = os.environ["HUSH_MESON"]
 args = sys.argv[1:]
 if args and args[0] == "setup" and not any(arg.startswith("-Dcpp_std=") for arg in args):
     args.insert(1, "-Dcpp_std=c++20")
+print("hush meson:", real, *args, file=sys.stderr, flush=True)
 raise SystemExit(subprocess.call([real, *args]))
