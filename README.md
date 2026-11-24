@@ -2,20 +2,27 @@
 
 Real-time noise and echo cancellation for calls. The microphone path is WebRTC AEC3, then DPDFNet8. DeepFilterNet3 and RNNoise stay available when you want less delay or less CPU. A virtual microphone and a virtual speaker sit on top of that core on macOS. On Windows the same core feeds a virtual audio driver through a user-mode helper.
 
-The call app should use **HUSH Microphone** and **HUSH Speaker**. HUSH has to be running. Incoming call audio is cleaned, played to your output device, and that cleaned signal is the echo reference. Krisp is the product this is measured against. It is not part of HUSH.
+The call app should use **HUSH Microphone**. On a Mac it also uses **HUSH Speaker**. HUSH has to be running. Krisp is the product this is measured against. It is not part of HUSH.
 
 ## Install
 
-The desktop app has one ON/OFF switch. It remembers that state, and it can open at login. Pick the real microphone and the real speakers in the window. In Zoom, Meet, Discord, or Teams, select HUSH Microphone and HUSH Speaker.
+### macOS
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/psixsaba/HUSH/main/install.sh | bash
+```
+
+That downloads the newest app and `HUSH.driver`, installs both with one administrator prompt, runs `xattr -cr`, and restarts `coreaudiod` with `killall coreaudiod`. On macOS 15 Sequoia, if the app is blocked, try to open it, then use **System Settings > Privacy & Security > Open Anyway**. `uninstall.sh` removes the app and the plugin. Details are in [docs/MAC_TEST.md](docs/MAC_TEST.md).
+
+### Windows
+
+Download `HUSH_0.3.0_x64-setup.exe` and run it. Secure Boot stays on. There is no Test Mode step. The installer downloads VB-CABLE from VB-Audio, checks SHA-256 `b950e39f01af1d04ea623c8f6d8eb9b6ea5c477c637295fabf20631c85116bfb`, and runs VB-Audio's own setup. Reboot once if it asks. In Zoom, Meet, Discord, or Teams, select **HUSH Microphone**. VB-CABLE is donationware and is not shipped inside HUSH: [vb-audio.com/Cable](https://vb-audio.com/Cable/) and [donate](https://vb-audio.com/Services/donate.htm). Details are in [docs/WINDOWS_TEST.md](docs/WINDOWS_TEST.md).
+
+The window has one ON/OFF switch. It remembers that state, and it can open at login.
 
 ![HUSH on](docs/images/hush-app.png)
 
-![HUSH off, driver missing](docs/images/hush-app-off.png)
-
-Pre-release installers are attached to `v0.2.0` when GitHub Actions is green.
-
-- macOS: open `HUSH_0.2.0_aarch64.dmg`, drag HUSH.app to Applications, and run `HUSH_0.2.0_macos.pkg`. The package copies the universal HAL plugin to `/Library/Audio/Plug-Ins/HAL` and restarts `coreaudiod`. The app and the plugin are ad-hoc signed. They are not notarized. If macOS blocks the app, right-click HUSH.app, choose Open, then Open. `xattr -cr /Applications/HUSH.app` clears the quarantine flag. `Uninstall HUSH.command` on the disk image removes the plugin. Details are in [docs/MAC_TEST.md](docs/MAC_TEST.md).
-- Windows: turn Secure Boot off, run `bcdedit /set testsigning on` from an elevated PowerShell, reboot, then run the NSIS setup exe or the MSI. The installer adds a Start Menu shortcut, installs the test-signed driver, and the uninstaller removes it. Test Mode has to stay on. Details are in [docs/WINDOWS_TEST.md](docs/WINDOWS_TEST.md).
+The disk image and the package are still built for people who want them. The test-signed Windows driver is documented in [docs/DEVELOPER.md](docs/DEVELOPER.md).
 
 ## Layout
 

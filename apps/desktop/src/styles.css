@@ -205,6 +205,15 @@ h2 {
   font-size: 22px;
 }
 
+.about {
+  margin-top: 16px;
+  padding-bottom: 16px;
+}
+
+.about a {
+  color: var(--accent);
+}
+
 .toggle {
   padding: 12px 0;
   border-top: 1px solid var(--line);

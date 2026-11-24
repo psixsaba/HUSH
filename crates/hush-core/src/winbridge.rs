@@ -172,6 +172,10 @@ pub fn acquire_bridge() -> Option<BridgeGuard> {
 }
 
 /// Block until `stop` is set. Missing driver or rings are retried, not fatal.
+pub fn hush_vad_loaded() -> bool {
+    Device::open().is_some()
+}
+
 pub fn run_windows_bridge(stop: &AtomicBool) -> Result<()> {
     if FRAME_SAMPLES != 480 {
         return Err(Error::msg("the Windows IOCTL frame is 480 samples"));

@@ -132,6 +132,10 @@ The macOS disk image carries `HUSH.app` and `HUSH_0.2.0_macos.pkg`. The package 
 
 Level meters are the RMS of the microphone frame and of the frame the pipeline just wrote. CPU and latency are the same counters the CLI prints.
 
+## VB-CABLE on Windows
+
+A free virtual microphone that other apps can select has to be a kernel driver with a Microsoft signature, or somebody else's signed driver. HushVad cannot be signed for free, so the default Windows path does not load it. `hush service` and the app use VB-CABLE when `\\.\HushVad` does not open. The cleaned microphone is written to the render endpoint CABLE Input. Call apps select the capture endpoint, renamed to HUSH Microphone. Echo cancellation uses WASAPI loopback of the real speakers. There is no free virtual speaker, so incoming-voice cleaning is off in this mode. The installer downloads Pack45, checks the pinned SHA-256, and runs VB-Audio's setup with `-i -h`, falling back to their window. The zip is not in the repository. Test Mode and the HushVad package stay available for driver work; the steps are in `docs/DEVELOPER.md`.
+
 ## What was left out on license grounds
 
 - PESQ. The ITU reference is not a permissive license. It is not a dependency and the harness does not compute it. Internal research can add it locally.

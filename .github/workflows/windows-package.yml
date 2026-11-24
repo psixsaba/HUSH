@@ -35,6 +35,17 @@ jobs:
         env:
           CARGO_BUILD_JOBS: 2
         run: cargo build -p hush-cli --release
+      - name: VB-CABLE hash and round trip
+        shell: pwsh
+        run: |
+          & .\target\release\hush.exe vbcable install --noninteractive
+          $code = $LASTEXITCODE
+          if ($code -eq 1) { exit 1 }
+          if ($code -eq 10) {
+            Write-Host "VB-CABLE setup did not expose endpoints without a reboot. Round trip skipped."
+          }
+          & .\target\release\hush.exe vbcable roundtrip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Self-test on a machine with no HUSH driver
         shell: pwsh
         run: |
@@ -106,10 +117,23 @@ jobs:
         run: |
           npm ci
           npm run tauri build -- --bundles app
+      - name: Developer ID signature
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: scripts/macos/sign-if-secrets.sh
       - name: Disk image and package
         run: |
           scripts/macos/build-unsigned-pkg.sh
           scripts/macos/build-unsigned-dmg.sh
+          app=$(find target/release/bundle -name 'HUSH.app' -type d | head -n 1)
+          tar -C "$(dirname "$app")" -czf dist/HUSH_0.3.0_aarch64.app.tar.gz HUSH.app
+          tar -C drivers/macos/build -czf dist/HUSH_0.3.0_HUSH.driver.tar.gz HUSH.driver
+          cp install.sh uninstall.sh dist/
           ls -l dist
       - uses: actions/upload-artifact@v4
         with:
@@ -118,6 +142,9 @@ jobs:
           path: |
             dist/*.dmg
             dist/*.pkg
+            dist/*.tar.gz
+            dist/install.sh
+            dist/uninstall.sh
 
   release:
     needs: [package, macos]
@@ -136,17 +163,23 @@ jobs:
         run: ls -l dist
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.2.0
-          name: HUSH 0.2.0
+          tag_name: v0.3.0
+          name: HUSH 0.3.0
           prerelease: true
           generate_release_notes: false
           body: |
-            End-user builds of HUSH 0.2.0. Open the app and use the ON/OFF switch. In Zoom, Meet, Discord, or Teams select HUSH Microphone and HUSH Speaker.
+            Free install. No paid signing certificate, and on Windows Secure Boot stays on.
 
-            macOS: open `HUSH_0.2.0_aarch64.dmg`, drag HUSH.app to Applications, and run `HUSH_0.2.0_macos.pkg`. The package installs the HAL plugin and restarts coreaudiod. The build is ad-hoc signed and not notarized. If macOS blocks the app, right-click it, choose Open, then Open. `xattr -cr /Applications/HUSH.app` clears the download flag. Steps are in `docs/MAC_TEST.md`.
+            macOS, one line:
 
-            Windows: turn Secure Boot off, run `bcdedit /set testsigning on` from an elevated PowerShell, and reboot so the desktop shows Test Mode. Then run the NSIS setup exe or the MSI. `HushTest.cer` is the test certificate. The driver zip password is `hush-test`. Steps are in `docs/WINDOWS_TEST.md`.
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/psixsaba/HUSH/main/install.sh | bash
+            ```
 
-            The runners compile and package. They do not load the drivers. A real call still has to be confirmed on each machine.
+            That script is also attached here as `install.sh`. It downloads `HUSH_0.3.0_aarch64.app.tar.gz` and `HUSH_0.3.0_HUSH.driver.tar.gz`, installs both with one administrator prompt, clears quarantine, and runs `killall coreaudiod`. On macOS 15 Sequoia, if the app is blocked, try to open it and then use System Settings, Privacy & Security, Open Anyway. `uninstall.sh` removes it.
+
+            Windows: run `HUSH_0.3.0_x64-setup.exe`. The installer downloads VB-CABLE Pack45 from VB-Audio, checks SHA-256 `b950e39f01af1d04ea623c8f6d8eb9b6ea5c477c637295fabf20631c85116bfb`, and runs VB-Audio's setup. It does not ship the VB-CABLE binaries. Reboot once if asked. In Zoom, Meet, Discord, or Teams select HUSH Microphone. VB-CABLE is donationware: https://vb-audio.com/Cable/ and https://vb-audio.com/Services/donate.htm
+
+            The test-signed HushVad driver is a developer option. See `docs/DEVELOPER.md`. The runners do not place a call.
           files: dist/*
           fail_on_unmatched_files: true

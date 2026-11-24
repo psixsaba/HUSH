@@ -31,18 +31,22 @@ find "$root/target/release" -name '*onnxruntime*.dylib' -print | while read -r l
     cp -f "$lib" "$app/Contents/MacOS/" || true
 done
 if command -v codesign >/dev/null 2>&1; then
-    codesign --force --deep --sign - "$app" || echo "warning: ad-hoc codesign of HUSH.app failed" >&2
+    if codesign -dv "$app" 2>&1 | grep -q "Authority="; then
+        echo "keeping the Developer ID signature on $app"
+    else
+        codesign --force --deep --sign - "$app" || echo "warning: ad-hoc codesign of HUSH.app failed" >&2
+    fi
 fi
 cp -R "$app" "$stage/HUSH.app"
-if [ -f "$root/dist/HUSH_0.2.0_macos.pkg" ]; then
-    cp "$root/dist/HUSH_0.2.0_macos.pkg" "$stage/HUSH_0.2.0_macos.pkg"
+if [ -f "$root/dist/HUSH_0.3.0_macos.pkg" ]; then
+    cp "$root/dist/HUSH_0.3.0_macos.pkg" "$stage/HUSH_0.3.0_macos.pkg"
 fi
 cp "$root/scripts/macos/uninstall-hush.sh" "$stage/uninstall-hush.sh"
 cp "$root/scripts/macos/Uninstall-HUSH.command" "$stage/Uninstall HUSH.command"
 chmod 755 "$stage/uninstall-hush.sh" "$stage/Uninstall HUSH.command"
 cat > "$stage/Install.txt" <<'EOF'
 1. Drag HUSH.app to Applications.
-2. Double-click HUSH_0.2.0_macos.pkg. It installs HUSH.driver into
+2. Double-click HUSH_0.3.0_macos.pkg. It installs HUSH.driver into
    /Library/Audio/Plug-Ins/HAL and restarts coreaudiod. macOS asks for
    an administrator password. The first launch of HUSH.app can also
    install the driver with the Install driver button.
@@ -61,9 +65,9 @@ Allow button for the blocked plugin.
 EOF
 arch=$(uname -m)
 case "$arch" in
-    arm64) name="HUSH_0.2.0_aarch64.dmg" ;;
-    x86_64) name="HUSH_0.2.0_x86_64.dmg" ;;
-    *) name="HUSH_0.2.0_${arch}.dmg" ;;
+    arm64) name="HUSH_0.3.0_aarch64.dmg" ;;
+    x86_64) name="HUSH_0.3.0_x86_64.dmg" ;;
+    *) name="HUSH_0.3.0_${arch}.dmg" ;;
 esac
 hdiutil create -volname HUSH -srcfolder "$stage" -ov -format UDZO "$root/dist/$name"
 echo "wrote $root/dist/$name"

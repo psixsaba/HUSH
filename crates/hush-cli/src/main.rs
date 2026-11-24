@@ -7,6 +7,8 @@ use std::thread;
 use std::time::Duration;
 
 #[cfg(windows)]
+mod vbcable_setup;
+#[cfg(windows)]
 mod winsetup;
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -32,8 +34,11 @@ enum Command {
     Run(RunArgs),
     /// Clean every WAV in a directory with one loaded model.
     Batch(BatchArgs),
-    /// Shuttle the virtual microphone and speaker through the Windows driver IOCTL.
+    /// Shuttle the virtual microphone and speaker through the Windows driver IOCTL,
+    /// or run the VB-CABLE engine when that driver is not loaded.
     Service,
+    /// Download, check, and install VB-CABLE, or remove it.
+    VbCable(VbCableArgs),
     /// Install or remove the test-signed virtual audio driver.
     Driver(DriverArgs),
     /// Download the DPDFNet weights into the cache the pipeline reads.
@@ -41,6 +46,26 @@ enum Command {
     /// Check the ring, per-frame CPU, and that the virtual devices are present.
     #[command(name = "selftest")]
     SelfTest,
+}
+
+#[derive(Parser)]
+struct VbCableArgs {
+    #[command(subcommand)]
+    action: VbCableAction,
+}
+
+#[derive(Subcommand)]
+enum VbCableAction {
+    /// Download Pack45, check the pinned SHA-256, and run VB-Audio's setup.
+    Install {
+        /// Do not open the VB-Audio window if `-i -h` does not finish.
+        #[arg(long)]
+        noninteractive: bool,
+    },
+    /// Offer VB-Audio's own setup so the cable can be removed.
+    Uninstall,
+    /// Play a tone into CABLE Input and listen on the capture endpoint.
+    Roundtrip,
 }
 
 #[derive(Parser)]
@@ -170,6 +195,7 @@ fn main() -> ExitCode {
         Command::Run(args) => run(args),
         Command::Batch(args) => batch(args),
         Command::Service => service(),
+        Command::VbCable(args) => vbcable(args),
         Command::Driver(args) => driver(args),
         Command::Models(args) => models(args),
         Command::SelfTest => selftest(),
@@ -406,25 +432,110 @@ fn fetch_model() -> ExitCode {
 fn service() -> ExitCode {
     #[cfg(windows)]
     {
-        let Some(_bridge) = hush_core::acquire_bridge() else {
-            println!("hush service: the bridge is already running");
+        if hush_core::hush_vad_loaded() {
+            let Some(_bridge) = hush_core::acquire_bridge() else {
+                println!("hush service: the bridge is already running");
+                return ExitCode::SUCCESS;
+            };
+            let stop = Arc::new(AtomicBool::new(false));
+            let flag = Arc::clone(&stop);
+            let _ = ctrlc::set_handler(move || flag.store(true, Ordering::SeqCst));
+            println!("hush service: feeding \\\\.\\HushVad from the user-session rings");
+            if let Err(err) = hush_core::run_windows_bridge(&stop) {
+                eprintln!("hush: {err}");
+                return ExitCode::from(1);
+            }
             return ExitCode::SUCCESS;
-        };
-        let stop = Arc::new(AtomicBool::new(false));
-        let flag = Arc::clone(&stop);
-        let _ = ctrlc::set_handler(move || flag.store(true, Ordering::SeqCst));
-        println!("hush service: feeding \\\\.\\HushVad from the user-session rings");
-        if let Err(err) = hush_core::run_windows_bridge(&stop) {
-            eprintln!("hush: {err}");
-            return ExitCode::from(1);
         }
-        return ExitCode::SUCCESS;
+        println!("hush service: HushVad is not loaded, using VB-CABLE");
+        return run_vbcable_service();
     }
     #[cfg(not(windows))]
     {
         eprintln!("hush service feeds the Windows virtual driver and only runs on Windows");
         ExitCode::from(2)
     }
+}
+
+fn vbcable(args: VbCableArgs) -> ExitCode {
+    match args.action {
+        VbCableAction::Roundtrip => match hush_core::round_trip() {
+            Ok(hush_core::RoundTrip::Skipped(message)) => {
+                println!("round trip skipped: {message}");
+                ExitCode::SUCCESS
+            }
+            Ok(hush_core::RoundTrip::Heard { rms }) => {
+                println!("round trip: tone came back from the cable (rms {rms:.3})");
+                ExitCode::SUCCESS
+            }
+            Ok(hush_core::RoundTrip::Silent { rms }) => {
+                eprintln!("round trip: the cable was silent (rms {rms:.4})");
+                ExitCode::from(1)
+            }
+            Err(err) => {
+                eprintln!("hush: {err}");
+                ExitCode::from(1)
+            }
+        },
+        #[cfg(windows)]
+        VbCableAction::Install { noninteractive } => vbcable_setup::install(noninteractive),
+        #[cfg(windows)]
+        VbCableAction::Uninstall => vbcable_setup::uninstall(),
+        #[cfg(not(windows))]
+        VbCableAction::Install { .. } | VbCableAction::Uninstall => {
+            eprintln!("VB-CABLE is the Windows virtual microphone");
+            ExitCode::from(2)
+        }
+    }
+}
+
+#[cfg(windows)]
+fn run_vbcable_service() -> ExitCode {
+    let lists = match list_devices() {
+        Ok(lists) => lists,
+        Err(err) => {
+            eprintln!("hush: {err}");
+            return ExitCode::from(1);
+        }
+    };
+    let plan = hush_core::engine_plan(false, &lists.outputs, None);
+    if !plan.cable_present {
+        eprintln!("hush: VB-CABLE is not installed. Run the HUSH setup, or `hush vbcable install`.");
+        return ExitCode::from(1);
+    }
+    let config = SessionConfig {
+        input_device: None,
+        output_device: plan.playback_device,
+        far_device: None,
+        pipeline: PipelineConfig {
+            enabled: true,
+            muted: false,
+            aec_enabled: true,
+            ns_backend: NsBackend::DpdfNet,
+            strength: 1.0,
+            clean_incoming: false,
+        },
+        publish_ring: false,
+        bridge_speaker: false,
+        monitor_cleaned: false,
+        loopback_device: plan.loopback_device,
+    };
+    let mut session = match RealtimeSession::start(config) {
+        Ok(session) => session,
+        Err(err) => {
+            eprintln!("hush: {err}");
+            return ExitCode::from(1);
+        }
+    };
+    let stop = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&stop);
+    let _ = ctrlc::set_handler(move || flag.store(true, Ordering::SeqCst));
+    println!("hush service: writing the cleaned microphone to CABLE Input");
+    while !stop.load(Ordering::SeqCst) {
+        thread::sleep(Duration::from_millis(200));
+    }
+    session.stop();
+    ExitCode::SUCCESS
 }
 
 fn devices() -> ExitCode {
@@ -572,6 +683,7 @@ fn run(args: RunArgs) -> ExitCode {
         publish_ring: args.ring,
         bridge_speaker: args.bridge,
         monitor_cleaned,
+        loopback_device: None,
     };
     let mut session = match RealtimeSession::start(config) {
         Ok(session) => session,

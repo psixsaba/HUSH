@@ -11,7 +11,7 @@ members = [
 webrtc-audio-processing-sys = { path = "third_party/webrtc-audio-processing-sys" }
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 publish = false
@@ -32,6 +32,7 @@ rustfft = "6"
 rtrb = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 thiserror = "2"
 webrtc-audio-processing = { version = "~2.1", features = ["bundled"] }
 webrtc-audio-processing-config = "~2.1"

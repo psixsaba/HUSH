@@ -1,21 +1,26 @@
 # HUSH on Windows 10 or 11 (x64)
 
-This build is test-signed. Windows will load it only while test signing is on. A normal PC with Secure Boot enabled will refuse it. That is a development machine setting.
+Secure Boot stays on. You do not turn on Test Mode.
 
-The installer is the NSIS setup executable from the `v0.2.0` release (`HUSH_0.2.0_x64-setup.exe`; the MSI installs the same files). It installs the app, `hush.exe`, the ONNX Runtime DLL, a Start Menu shortcut, and the test-signed virtual audio driver. The uninstaller removes the driver. Open HUSH and use the ON/OFF switch. Start on login is a switch in the app. The user-session bridge still starts at sign-in so the driver has somewhere to send audio.
+Run `HUSH_0.3.0_x64-setup.exe` from the `v0.3.0` release (the MSI installs the same app). The installer downloads VB-CABLE Pack45 from VB-Audio, checks SHA-256 `b950e39f01af1d04ea623c8f6d8eb9b6ea5c477c637295fabf20631c85116bfb`, and runs `VBCABLE_Setup_x64.exe -i -h`. If those flags do not finish, it opens VB-Audio's setup window. Reboot once if HUSH Microphone does not appear. The uninstaller removes HUSH and asks before it removes VB-CABLE.
+
+VB-CABLE is donationware and is not included in the installer. Credit and a donate link are in the installer window and in the app: https://vb-audio.com/Cable/ and https://vb-audio.com/Services/donate.htm. The cable is shared with OBS and similar apps. Only one program should play into CABLE Input.
+
+In Zoom, Meet, Discord, or Teams, select **HUSH Microphone**. Incoming-voice cleaning is off in this mode because Windows has no free virtual speaker. The test-signed HushVad driver, which does include HUSH Speaker, is in [DEVELOPER.md](DEVELOPER.md).
 
 ## მოკლედ
 
-1. Secure Boot გამორთე UEFI/BIOS-ში. Test signing მასთან ერთად არ იმუშავებს.
-2. PowerShell გახსენი ადმინისტრატორით.
-3. ჩაწერე `bcdedit /set testsigning on` და გადატვირთე კომპიუტერი. ეკრანის ქვედა მარჯვენა კუთხეში უნდა ეწეროს **Test Mode**.
-4. გაუშვი `HUSH_0.2.0_x64-setup.exe` (ან MSI).
-5. Sound settings-ში უნდა გამოჩნდეს **HUSH Microphone** და **HUSH Speaker**.
-6. გახსენი HUSH და ჩართე დიდი ON/OFF. Start on login იქვეა.
-7. Zoom, Meet, Discord ან Teams-ში აირჩიე ეს ორი მოწყობილობა.
-8. შემოწმება: `hush selftest` უნდა დასრულდეს კოდით 0.
+1. Secure Boot ჩართული დატოვე. Test Mode არ გჭირდება.
+2. გაუშვი `HUSH_0.3.0_x64-setup.exe`. ინსტალერი VB-CABLE-ს ჩამოტვირთავს და SHA-256-ს შეამოწმებს.
+3. თუ მიკროფონი არ გამოჩნდა, ერთხელ გადატვირთე.
+4. გახსენი HUSH და ჩართე დიდი ON/OFF.
+5. Zoom, Meet, Discord ან Teams-ში აირჩიე **HUSH Microphone**.
 
-დანარჩენი ტექსტი ინგლისურად არის, იგივე ნაბიჯებით.
+Test Mode და HushVad დეველოპერის გზაა. ის `docs/DEVELOPER.md`-შია.
+
+## Developer note: test signing
+
+The steps below are the old HushVad bring-up. Skip them for the VB-CABLE install. The same material is in [DEVELOPER.md](DEVELOPER.md).
 
 ## 1. Turn on test signing
 

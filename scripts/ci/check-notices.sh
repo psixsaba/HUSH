@@ -28,6 +28,9 @@ require "libASPL"
 require "DPDFNet"
 require "Apache-2.0"
 require "ONNX Runtime"
+require "VB-CABLE"
+require "donationware"
+require "not redistributed"
 
 if grep -E -q 'GPL-2|GPL-3|GNU General Public' "$notices"; then
     echo "THIRD_PARTY_NOTICES must not list a GPL component as shipped" >&2
