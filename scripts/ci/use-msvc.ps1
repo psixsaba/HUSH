@@ -51,6 +51,25 @@ $env:LIB = $lib
 $env:LIBPATH = $libpath
 $env:CC = "cl.exe"
 $env:HUSH_MESON = $meson.Source
+$llvmNm = Get-Command llvm-nm.exe -ErrorAction SilentlyContinue
+if (-not $llvmNm) {
+    foreach ($candidate in @(
+        "${env:ProgramFiles}\LLVM\bin\llvm-nm.exe",
+        "${env:ProgramFiles(x86)}\LLVM\bin\llvm-nm.exe"
+    )) {
+        if (Test-Path $candidate) {
+            $llvmNm = Get-Item $candidate
+            break
+        }
+    }
+}
+if (-not $llvmNm) {
+    throw "llvm-nm.exe was not found. The WebRTC build prefixes symbols with nm."
+}
+$nmCmd = Join-Path $wrapper "nm.cmd"
+$nmSource = if ($llvmNm.Source) { $llvmNm.Source } else { $llvmNm.FullName }
+[System.IO.File]::WriteAllText($nmCmd, "@echo off`r`n`"$nmSource`" %*`r`n")
+Write-Host "nm wrapper: $nmCmd -> $nmSource"
 $cl = (Get-Command cl.exe).Source
 $cxxBat = Join-Path $env:RUNNER_TEMP "hush-cl-cxx20.cmd"
 # Meson appends /std:c++17. MSVC keeps the last /std, so this wrapper adds c++20 at the end.

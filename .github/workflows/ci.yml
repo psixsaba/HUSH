@@ -18,6 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools
       - name: Linux packages
         if: runner.os == 'Linux'
         run: |
@@ -54,6 +56,8 @@ jobs:
           HUSH_UNIVERSAL=1 drivers/macos/build.sh
           lipo -info drivers/macos/build/HUSH.driver/Contents/MacOS/HUSH
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools
       - name: macOS Meson
         run: pip3 install --break-system-packages meson ninja
       - name: Check the desktop shell
