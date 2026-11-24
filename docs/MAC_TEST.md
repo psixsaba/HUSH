@@ -43,7 +43,7 @@ If the device line fails, macOS did not load the plugin. On Apple silicon, `core
 ./target/release/hush run --bridge --aec --output "MacBook Air Speakers"
 ```
 
-Use the output name `hush devices` printed, if it is not `MacBook Air Speakers`. Leave that process running. It publishes HUSH Microphone and plays HUSH Speaker on the built-in speakers.
+Use the output name `hush devices` printed, if it is not `MacBook Air Speakers`. Leave that process running. It publishes HUSH Microphone and plays HUSH Speaker on the built-in speakers. The first time Terminal (or HUSH.app) opens the microphone, macOS asks for permission under System Settings, Privacy & Security, Microphone. Until that is allowed, the capture side stays silent.
 
 ## Zoom
 

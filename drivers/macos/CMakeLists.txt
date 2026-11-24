@@ -1,11 +1,16 @@
 cmake_minimum_required(VERSION 3.20)
-project(HUSH CXX)
+# C is required. project(HUSH CXX) makes CMake drop ring.c and the link then
+# fails with undefined _hush_ring_* from Driver.cpp. Those symbols are C,
+# not mangled C++.
+project(HUSH C CXX)
 
 if(NOT APPLE)
     message(STATUS "HUSH is a macOS AudioServerPlugIn; nothing to build on this host")
     return()
 endif()
 
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -48,10 +53,16 @@ ExternalProject_Add(libASPL_build
     BUILD_ALWAYS OFF
 )
 
+set(HUSH_RING_C "${CMAKE_CURRENT_SOURCE_DIR}/../../native/ring/ring.c")
+if(NOT EXISTS "${HUSH_RING_C}")
+    message(FATAL_ERROR "HUSH ring source is missing: ${HUSH_RING_C}")
+endif()
+
 add_library(${DRIVER_NAME} MODULE
     Driver.cpp
-    ${CMAKE_SOURCE_DIR}/../../native/ring/ring.c
+    ${HUSH_RING_C}
 )
+set_source_files_properties(${HUSH_RING_C} PROPERTIES LANGUAGE C)
 
 add_dependencies(${DRIVER_NAME} libASPL_build)
 target_include_directories(${DRIVER_NAME} PRIVATE
