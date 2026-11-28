@@ -848,16 +848,11 @@ mod tests {
 
     #[test]
     fn device_switch_is_a_new_session_config() {
-        let lists = match devices::list_devices() {
-            Ok(lists) => lists,
-            Err(_) => return,
-        };
-        if lists.inputs.len() < 2 {
-            return;
-        }
+        // Do not open the host here. A headless Windows runner aborts inside
+        // WASAPI enumeration, which takes the whole test process down.
         let first = SessionConfig {
-            input_device: Some(lists.inputs[0].clone()),
-            output_device: lists.outputs.first().cloned(),
+            input_device: Some("Mic A".into()),
+            output_device: Some("Speakers".into()),
             far_device: None,
             pipeline: config(true),
             publish_ring: false,
@@ -866,9 +861,10 @@ mod tests {
             loopback_device: None,
         };
         let second = SessionConfig {
-            input_device: Some(lists.inputs[1].clone()),
+            input_device: Some("Mic B".into()),
             ..first.clone()
         };
         assert_ne!(first.input_device, second.input_device);
+        assert_eq!(first.pipeline.enabled, second.pipeline.enabled);
     }
 }
