@@ -69,5 +69,20 @@ case "$arch" in
     x86_64) name="HUSH_0.3.0_x86_64.dmg" ;;
     *) name="HUSH_0.3.0_${arch}.dmg" ;;
 esac
-hdiutil create -volname HUSH -srcfolder "$stage" -ov -format UDZO "$root/dist/$name"
+# -srcfolder guesses the volume size and has failed on the GitHub runner with
+# "No space left" while copying HUSH.app even when the host disk has room.
+# Size the image from the staged files, copy onto it, then compress.
+kb=$(du -sk "$stage" | awk '{print $1}')
+mb=$(( kb / 1024 * 2 + 512 ))
+echo "staging $(du -sh "$stage" | awk '{print $1}'), image ${mb}m"
+ls -lh "$stage/HUSH.app/Contents/Resources" || true
+scratch="$root/dist/hush-rw.dmg"
+hdiutil create -size "${mb}m" -fs HFS+ -volname HUSH -ov "$scratch"
+hdiutil attach "$scratch" -nobrowse > /tmp/hush-attach.txt
+device=$(awk '/\/Volumes\// {print $1; exit}' /tmp/hush-attach.txt)
+mount=$(awk '/\/Volumes\// {print $NF; exit}' /tmp/hush-attach.txt)
+cp -R "$stage"/. "$mount"/
+hdiutil detach "$device"
+hdiutil convert "$scratch" -format UDZO -ov -o "$root/dist/$name"
+rm -f "$scratch"
 echo "wrote $root/dist/$name"
