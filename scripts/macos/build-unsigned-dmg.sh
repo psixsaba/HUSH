@@ -38,15 +38,15 @@ if command -v codesign >/dev/null 2>&1; then
     fi
 fi
 cp -R "$app" "$stage/HUSH.app"
-if [ -f "$root/dist/HUSH_0.3.0_macos.pkg" ]; then
-    cp "$root/dist/HUSH_0.3.0_macos.pkg" "$stage/HUSH_0.3.0_macos.pkg"
+if [ -f "$root/dist/HUSH_0.3.1_macos.pkg" ]; then
+    cp "$root/dist/HUSH_0.3.1_macos.pkg" "$stage/HUSH_0.3.1_macos.pkg"
 fi
 cp "$root/scripts/macos/uninstall-hush.sh" "$stage/uninstall-hush.sh"
 cp "$root/scripts/macos/Uninstall-HUSH.command" "$stage/Uninstall HUSH.command"
 chmod 755 "$stage/uninstall-hush.sh" "$stage/Uninstall HUSH.command"
 cat > "$stage/Install.txt" <<'EOF'
 1. Drag HUSH.app to Applications.
-2. Double-click HUSH_0.3.0_macos.pkg. It installs HUSH.driver into
+2. Double-click HUSH_0.3.1_macos.pkg. It installs HUSH.driver into
    /Library/Audio/Plug-Ins/HAL and restarts coreaudiod. macOS asks for
    an administrator password. The first launch of HUSH.app can also
    install the driver with the Install driver button.
@@ -65,9 +65,9 @@ Allow button for the blocked plugin.
 EOF
 arch=$(uname -m)
 case "$arch" in
-    arm64) name="HUSH_0.3.0_aarch64.dmg" ;;
-    x86_64) name="HUSH_0.3.0_x86_64.dmg" ;;
-    *) name="HUSH_0.3.0_${arch}.dmg" ;;
+    arm64) name="HUSH_0.3.1_aarch64.dmg" ;;
+    x86_64) name="HUSH_0.3.1_x86_64.dmg" ;;
+    *) name="HUSH_0.3.1_${arch}.dmg" ;;
 esac
 # -srcfolder guesses the volume size and has failed on the GitHub runner with
 # "No space left" while copying HUSH.app even when the host disk has room.

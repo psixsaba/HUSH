@@ -138,8 +138,8 @@ jobs:
           scripts/macos/build-unsigned-pkg.sh
           scripts/macos/build-unsigned-dmg.sh
           app=$(find target/release/bundle -name 'HUSH.app' -type d | head -n 1)
-          tar -C "$(dirname "$app")" -czf dist/HUSH_0.3.0_aarch64.app.tar.gz HUSH.app
-          tar -C drivers/macos/build -czf dist/HUSH_0.3.0_HUSH.driver.tar.gz HUSH.driver
+          tar -C "$(dirname "$app")" -czf dist/HUSH_0.3.1_aarch64.app.tar.gz HUSH.app
+          tar -C drivers/macos/build -czf dist/HUSH_0.3.1_HUSH.driver.tar.gz HUSH.driver
           cp install.sh uninstall.sh dist/
           ls -l dist
       - uses: actions/upload-artifact@v4
@@ -156,7 +156,7 @@ jobs:
   release:
     needs: [package, macos]
     # Feature-branch pushes must not move the published tag. A merge to main
-    # still updates v0.3.0, which is the existing release job.
+    # still updates v0.3.1, which is the existing release job.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -172,12 +172,14 @@ jobs:
         run: ls -l dist
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.3.0
-          name: HUSH 0.3.0
+          tag_name: v0.3.1
+          name: HUSH 0.3.1
           prerelease: true
           generate_release_notes: false
           body: |
             Free install. No paid signing certificate, and on Windows Secure Boot stays on.
+
+            OFF now passes the raw microphone through instead of stopping the session. A call keeps working, and the noise model and echo canceller stay bypassed until you turn HUSH back on.
 
             macOS, one line:
 
@@ -185,9 +187,9 @@ jobs:
             curl -fsSL https://raw.githubusercontent.com/psixsaba/HUSH/main/install.sh | bash
             ```
 
-            That script is also attached here as `install.sh`. It downloads `HUSH_0.3.0_aarch64.app.tar.gz` and `HUSH_0.3.0_HUSH.driver.tar.gz`, installs both with one administrator prompt, clears quarantine, and runs `killall coreaudiod`. On macOS 15 Sequoia, if the app is blocked, try to open it and then use System Settings, Privacy & Security, Open Anyway. `uninstall.sh` removes it.
+            That script is also attached here as `install.sh`. It downloads `HUSH_0.3.1_aarch64.app.tar.gz` and `HUSH_0.3.1_HUSH.driver.tar.gz`, installs both with one administrator prompt, clears quarantine, and runs `killall coreaudiod`. On macOS 15 Sequoia, if the app is blocked, try to open it and then use System Settings, Privacy & Security, Open Anyway. `uninstall.sh` removes it.
 
-            Windows: run `HUSH_0.3.0_x64-setup.exe`. The installer downloads VB-CABLE Pack45 from VB-Audio, checks SHA-256 `b950e39f01af1d04ea623c8f6d8eb9b6ea5c477c637295fabf20631c85116bfb`, and runs VB-Audio's setup. It does not ship the VB-CABLE binaries. Reboot once if asked. In Zoom, Meet, Discord, or Teams select HUSH Microphone. VB-CABLE is donationware: https://vb-audio.com/Cable/ and https://vb-audio.com/Services/donate.htm
+            Windows: run `HUSH_0.3.1_x64-setup.exe`. The installer downloads VB-CABLE Pack45 from VB-Audio, checks SHA-256 `b950e39f01af1d04ea623c8f6d8eb9b6ea5c477c637295fabf20631c85116bfb`, and runs VB-Audio's setup. It does not ship the VB-CABLE binaries. Reboot once if asked. In Zoom, Meet, Discord, or Teams select HUSH Microphone. VB-CABLE is donationware: https://vb-audio.com/Cable/ and https://vb-audio.com/Services/donate.htm
 
             The test-signed HushVad driver is a developer option. See `docs/DEVELOPER.md`. The runners do not place a call.
           files: dist/*

@@ -16,7 +16,7 @@ That downloads the newest app and `HUSH.driver`, installs both with one administ
 
 ### Windows
 
-Download `HUSH_0.3.0_x64-setup.exe` and run it. Secure Boot stays on. There is no Test Mode step. The installer downloads VB-CABLE from VB-Audio, checks SHA-256 `b950e39f01af1d04ea623c8f6d8eb9b6ea5c477c637295fabf20631c85116bfb`, and runs VB-Audio's own setup. Reboot once if it asks. In Zoom, Meet, Discord, or Teams, select **HUSH Microphone**. VB-CABLE is donationware and is not shipped inside HUSH: [vb-audio.com/Cable](https://vb-audio.com/Cable/) and [donate](https://vb-audio.com/Services/donate.htm). Details are in [docs/WINDOWS_TEST.md](docs/WINDOWS_TEST.md).
+Download `HUSH_0.3.1_x64-setup.exe` and run it. Secure Boot stays on. There is no Test Mode step. The installer downloads VB-CABLE from VB-Audio, checks SHA-256 `b950e39f01af1d04ea623c8f6d8eb9b6ea5c477c637295fabf20631c85116bfb`, and runs VB-Audio's own setup. Reboot once if it asks. In Zoom, Meet, Discord, or Teams, select **HUSH Microphone**. VB-CABLE is donationware and is not shipped inside HUSH: [vb-audio.com/Cable](https://vb-audio.com/Cable/) and [donate](https://vb-audio.com/Services/donate.htm). Details are in [docs/WINDOWS_TEST.md](docs/WINDOWS_TEST.md).
 
 The window has one ON/OFF switch. It remembers that state, and it can open at login.
 

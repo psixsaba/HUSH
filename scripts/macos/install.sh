@@ -10,6 +10,8 @@ trap 'rm -rf "$tmp"' EXIT
 
 echo "Looking up the newest HUSH release, including pre-releases."
 json=$(curl -fsSL "https://api.github.com/repos/${repo}/releases?per_page=10")
+tag=$(printf '%s\n' "$json" | sed -n 's/.*"tag_name": "\([^"]*\)".*/\1/p' | head -n 1)
+echo "Installing ${tag:-unknown}"
 app_url=$(printf '%s\n' "$json" | sed -n 's/.*"browser_download_url": "\([^"]*HUSH_[^"]*\.app\.tar\.gz\)".*/\1/p' | head -n 1)
 driver_url=$(printf '%s\n' "$json" | sed -n 's/.*"browser_download_url": "\([^"]*HUSH\.driver\.tar\.gz\)".*/\1/p' | head -n 1)
 if [ -z "$app_url" ] || [ -z "$driver_url" ]; then

@@ -2,7 +2,7 @@
 
 Secure Boot stays on. You do not turn on Test Mode.
 
-Run `HUSH_0.3.0_x64-setup.exe` from the `v0.3.0` release (the MSI installs the same app). The installer downloads VB-CABLE Pack45 from VB-Audio, checks SHA-256 `b950e39f01af1d04ea623c8f6d8eb9b6ea5c477c637295fabf20631c85116bfb`, and runs `VBCABLE_Setup_x64.exe -i -h`. If those flags do not finish, it opens VB-Audio's setup window. Reboot once if HUSH Microphone does not appear. The uninstaller removes HUSH and asks before it removes VB-CABLE.
+Run `HUSH_0.3.1_x64-setup.exe` from the `v0.3.1` release (the MSI installs the same app). The installer downloads VB-CABLE Pack45 from VB-Audio, checks SHA-256 `b950e39f01af1d04ea623c8f6d8eb9b6ea5c477c637295fabf20631c85116bfb`, and runs `VBCABLE_Setup_x64.exe -i -h`. If those flags do not finish, it opens VB-Audio's setup window. Reboot once if HUSH Microphone does not appear. The uninstaller removes HUSH and asks before it removes VB-CABLE.
 
 VB-CABLE is donationware and is not included in the installer. Credit and a donate link are in the installer window and in the app: https://vb-audio.com/Cable/ and https://vb-audio.com/Services/donate.htm. The cable is shared with OBS and similar apps. Only one program should play into CABLE Input.
 
@@ -11,7 +11,7 @@ In Zoom, Meet, Discord, or Teams, select **HUSH Microphone**. Incoming-voice cle
 ## მოკლედ
 
 1. Secure Boot ჩართული დატოვე. Test Mode არ გჭირდება.
-2. გაუშვი `HUSH_0.3.0_x64-setup.exe`. ინსტალერი VB-CABLE-ს ჩამოტვირთავს და SHA-256-ს შეამოწმებს.
+2. გაუშვი `HUSH_0.3.1_x64-setup.exe`. ინსტალერი VB-CABLE-ს ჩამოტვირთავს და SHA-256-ს შეამოწმებს.
 3. თუ მიკროფონი არ გამოჩნდა, ერთხელ გადატვირთე.
 4. გახსენი HUSH და ჩართე დიდი ON/OFF.
 5. Zoom, Meet, Discord ან Teams-ში აირჩიე **HUSH Microphone**.
