@@ -333,6 +333,134 @@ mod tests {
     }
 
     #[test]
+    fn rapid_toggles_alternate_passthrough_and_cleaning() {
+        let mut pipeline = Pipeline::new(PipelineConfig {
+            enabled: true,
+            muted: false,
+            aec_enabled: false,
+            ns_backend: NsBackend::RnNoise,
+            strength: 1.0,
+            clean_incoming: false,
+        })
+        .unwrap();
+        let frame: Vec<f32> = (0..FRAME_SAMPLES)
+            .map(|i| {
+                let tone = (i as f32 * 220.0 * 2.0 * std::f32::consts::PI / SAMPLE_RATE as f32).sin() * 0.2;
+                let noise = ((i * 17) % 100) as f32 / 250.0 - 0.2;
+                tone + noise
+            })
+            .collect();
+        for turn in 0..12 {
+            let enabled = turn % 2 == 0;
+            pipeline
+                .set_config(PipelineConfig {
+                    enabled,
+                    muted: false,
+                    aec_enabled: false,
+                    ns_backend: NsBackend::RnNoise,
+                    strength: 1.0,
+                    clean_incoming: false,
+                })
+                .unwrap();
+            let mut out = vec![0.0; FRAME_SAMPLES];
+            let stats = pipeline.process_frame(&frame, None, &mut out).unwrap();
+            assert_eq!(stats.ns_applied, enabled && pipeline.config().strength > 0.0);
+            if !enabled {
+                let err = frame
+                    .iter()
+                    .zip(out.iter())
+                    .map(|(a, b)| (a - b).abs())
+                    .fold(0.0f32, f32::max);
+                assert!(err < 1e-6, "passthrough frame differed by {err}");
+                assert_eq!(pipeline.algorithmic_latency_samples(), 0);
+            }
+        }
+    }
+
+    #[test]
+    fn model_switch_changes_reported_latency() {
+        let mut pipeline = Pipeline::new(PipelineConfig {
+            enabled: true,
+            muted: false,
+            aec_enabled: false,
+            ns_backend: NsBackend::RnNoise,
+            strength: 1.0,
+            clean_incoming: false,
+        })
+        .unwrap();
+        assert!(pipeline.algorithmic_latency_samples() > 0);
+        pipeline
+            .set_config(PipelineConfig {
+                enabled: true,
+                muted: false,
+                aec_enabled: false,
+                ns_backend: NsBackend::Off,
+                strength: 1.0,
+                clean_incoming: false,
+            })
+            .unwrap();
+        assert_eq!(pipeline.algorithmic_latency_samples(), 0);
+        pipeline
+            .set_config(PipelineConfig {
+                enabled: false,
+                muted: false,
+                aec_enabled: true,
+                ns_backend: NsBackend::RnNoise,
+                strength: 1.0,
+                clean_incoming: true,
+            })
+            .unwrap();
+        assert_eq!(pipeline.algorithmic_latency_samples(), 0);
+    }
+
+    #[test]
+    fn noisy_signal_changes_when_cleaned_and_matches_when_off() {
+        let mut samples = sine(FRAME_SAMPLES * 40, 180.0, 0.15);
+        for (i, sample) in samples.iter_mut().enumerate() {
+            *sample += ((i * 13) % 50) as f32 / 200.0 - 0.125;
+        }
+        let path = std::env::temp_dir().join(format!("hush-noise-{}.wav", std::process::id()));
+        crate::wav::write_wav_mono(&path, &samples, SAMPLE_RATE).unwrap();
+        let (read, rate) = crate::wav::read_wav_mono(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(rate, SAMPLE_RATE);
+        assert_eq!(read.len(), samples.len());
+
+        let mut cleaning = Pipeline::new(PipelineConfig {
+            enabled: true,
+            muted: false,
+            aec_enabled: false,
+            ns_backend: NsBackend::RnNoise,
+            strength: 1.0,
+            clean_incoming: false,
+        })
+        .unwrap();
+        let mut bypass = Pipeline::new(PipelineConfig {
+            enabled: false,
+            muted: false,
+            aec_enabled: false,
+            ns_backend: NsBackend::RnNoise,
+            strength: 1.0,
+            clean_incoming: false,
+        })
+        .unwrap();
+        let cleaned = cleaning.process_buffer(&read, None).unwrap();
+        let raw = bypass.process_buffer(&read, None).unwrap();
+        let raw_err = read
+            .iter()
+            .zip(raw.samples.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f32, f32::max);
+        assert!(raw_err < 1e-5, "off mode changed the wav by {raw_err}");
+        let changed = read
+            .iter()
+            .zip(cleaned.samples.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f32, f32::max);
+        assert!(changed > 1e-3, "RNNoise left the noisy wav unchanged (max diff {changed})");
+    }
+
+    #[test]
     fn disabled_pipeline_ignores_the_suppressor() {
         let mut pipeline = Pipeline::new(PipelineConfig {
             enabled: false,

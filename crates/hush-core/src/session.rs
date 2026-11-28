@@ -798,3 +798,73 @@ where
         .map_err(Error::from)?;
     Ok(stream)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::NsBackend;
+
+    fn config(enabled: bool) -> PipelineConfig {
+        PipelineConfig {
+            enabled,
+            muted: false,
+            aec_enabled: false,
+            ns_backend: NsBackend::RnNoise,
+            strength: 1.0,
+            clean_incoming: false,
+        }
+    }
+
+    #[test]
+    fn toggling_processing_keeps_the_session_running() {
+        if devices::find_input(&devices::host(), None).is_err() {
+            return;
+        }
+        let mut session = match RealtimeSession::start(SessionConfig {
+            input_device: None,
+            output_device: None,
+            far_device: None,
+            pipeline: config(true),
+            publish_ring: true,
+            bridge_speaker: false,
+            monitor_cleaned: false,
+            loopback_device: None,
+        }) {
+            Ok(session) => session,
+            Err(_) => return,
+        };
+        for turn in 0..8 {
+            session.set_config(config(turn % 2 == 0));
+            thread::sleep(Duration::from_millis(40));
+            let stats = session.stats();
+            assert!(stats.running, "turn {turn} stopped the session");
+            assert_eq!(stats.enabled, turn % 2 == 0);
+        }
+        let frames = session.stats().frames;
+        assert!(frames > 0, "the capture path produced no frames");
+        session.stop();
+        assert!(!session.stats().running);
+    }
+
+    #[test]
+    fn device_switch_is_a_new_session_config() {
+        // Do not open the host here. A headless Windows runner aborts inside
+        // WASAPI enumeration, which takes the whole test process down.
+        let first = SessionConfig {
+            input_device: Some("Mic A".into()),
+            output_device: Some("Speakers".into()),
+            far_device: None,
+            pipeline: config(true),
+            publish_ring: false,
+            bridge_speaker: false,
+            monitor_cleaned: false,
+            loopback_device: None,
+        };
+        let second = SessionConfig {
+            input_device: Some("Mic B".into()),
+            ..first.clone()
+        };
+        assert_ne!(first.input_device, second.input_device);
+        assert_eq!(first.pipeline.enabled, second.pipeline.enabled);
+    }
+}

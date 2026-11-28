@@ -132,6 +132,12 @@ The macOS disk image carries `HUSH.app` and `HUSH_0.2.0_macos.pkg`. The package 
 
 Level meters are the RMS of the microphone frame and of the frame the pipeline just wrote. CPU and latency are the same counters the CLI prints.
 
+## The big switch is passthrough
+
+OFF does not stop the audio session. Stopping it drops the writer on `/hush-mic` (and stops playback into CABLE Input on Windows), so the call's microphone goes silent. OFF sets the pipeline's `enabled` flag to false. The session keeps running and publishes the raw microphone, with echo cancellation and the noise model bypassed. ON sets that flag back to true without tearing the session down. The same path is used by the tray item and the "Clean my microphone" switch. Device changes restart the session, because a live cpal stream cannot be pointed at a different device. Model changes go through the existing pipeline update.
+
+The POSIX shared-memory objects are created with mode 0666 while `umask` is briefly 0. `fchmod` on a Darwin shm fd returns EINVAL, and a 0644 ring cannot be opened by `coreaudiod`. `fstat` `st_size` is treated as "at least" the ring size because Darwin rounds it up to a page.
+
 ## VB-CABLE on Windows
 
 A free virtual microphone that other apps can select has to be a kernel driver with a Microsoft signature, or somebody else's signed driver. HushVad cannot be signed for free, so the default Windows path does not load it. `hush service` and the app use VB-CABLE when `\\.\HushVad` does not open. The cleaned microphone is written to the render endpoint CABLE Input. Call apps select the capture endpoint, renamed to HUSH Microphone. Echo cancellation uses WASAPI loopback of the real speakers. There is no free virtual speaker, so incoming-voice cleaning is off in this mode. The installer downloads Pack45, checks the pinned SHA-256, and runs VB-Audio's setup with `-i -h`, falling back to their window. The zip is not in the repository. Test Mode and the HushVad package stay available for driver work; the steps are in `docs/DEVELOPER.md`.

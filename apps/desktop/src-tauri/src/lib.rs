@@ -114,24 +114,33 @@ fn list_devices() -> Result<hush_core::DeviceLists, String> {
     hush_core::list_devices().map_err(|err| err.to_string())
 }
 
+fn stop_worker(worker: Worker) {
+    let mut worker = worker;
+    let _ = worker.tx.send(Cmd::Stop);
+    if let Some(handle) = worker.handle.take() {
+        let _ = handle.join();
+    }
+}
+
 #[tauri::command]
 fn start_session(state: tauri::State<AppState>, settings: UiSettings) -> Result<(), String> {
-    let mut slot = state.worker.lock().map_err(|err| err.to_string())?;
-    if let Some(mut running) = slot.take() {
-        let _ = running.tx.send(Cmd::Stop);
-        if let Some(handle) = running.handle.take() {
-            let _ = handle.join();
-        }
+    let config = session_config(&settings)?;
+    let previous = {
+        let mut slot = state.worker.lock().map_err(|err| err.to_string())?;
+        slot.take()
+    };
+    if let Some(worker) = previous {
+        stop_worker(worker);
     }
     let (tx, rx) = mpsc::channel();
     let (ready_tx, ready_rx) = mpsc::channel();
-    let config = session_config(&settings)?;
     let handle = std::thread::Builder::new()
         .name("hush-session".into())
         .spawn(move || owner(config, rx, ready_tx))
         .map_err(|err| err.to_string())?;
     match ready_rx.recv().map_err(|err| err.to_string())? {
         Ok(()) => {
+            let mut slot = state.worker.lock().map_err(|err| err.to_string())?;
             *slot = Some(Worker {
                 tx,
                 handle: Some(handle),
@@ -147,36 +156,43 @@ fn start_session(state: tauri::State<AppState>, settings: UiSettings) -> Result<
 
 #[tauri::command]
 fn stop_session(state: tauri::State<AppState>) -> Result<(), String> {
-    let mut slot = state.worker.lock().map_err(|err| err.to_string())?;
-    if let Some(mut worker) = slot.take() {
-        let _ = worker.tx.send(Cmd::Stop);
-        if let Some(handle) = worker.handle.take() {
-            let _ = handle.join();
-        }
+    let worker = {
+        let mut slot = state.worker.lock().map_err(|err| err.to_string())?;
+        slot.take()
+    };
+    if let Some(worker) = worker {
+        stop_worker(worker);
     }
     Ok(())
 }
 
 #[tauri::command]
 fn update_settings(state: tauri::State<AppState>, settings: UiSettings) -> Result<(), String> {
-    let slot = state.worker.lock().map_err(|err| err.to_string())?;
-    if let Some(worker) = slot.as_ref() {
-        worker
-            .tx
-            .send(Cmd::Update(session_config(&settings)?.pipeline))
-            .map_err(|err| err.to_string())?;
+    // Build the pipeline config before taking the worker lock. Stopping the
+    // session joins that thread, and a stats call must not sit on the lock
+    // while it waits for the same thread.
+    let pipeline = session_config(&settings)?.pipeline;
+    let cmd_tx = {
+        let slot = state.worker.lock().map_err(|err| err.to_string())?;
+        slot.as_ref().map(|worker| worker.tx.clone())
+    };
+    if let Some(cmd_tx) = cmd_tx {
+        cmd_tx.send(Cmd::Update(pipeline)).map_err(|err| err.to_string())?;
     }
     Ok(())
 }
 
 #[tauri::command]
 fn session_stats(state: tauri::State<AppState>) -> Result<Option<SessionStats>, String> {
-    let slot = state.worker.lock().map_err(|err| err.to_string())?;
-    let Some(worker) = slot.as_ref() else {
-        return Ok(None);
+    let cmd_tx = {
+        let slot = state.worker.lock().map_err(|err| err.to_string())?;
+        let Some(worker) = slot.as_ref() else {
+            return Ok(None);
+        };
+        worker.tx.clone()
     };
     let (tx, rx) = mpsc::channel();
-    worker.tx.send(Cmd::Stats(tx)).map_err(|err| err.to_string())?;
+    cmd_tx.send(Cmd::Stats(tx)).map_err(|err| err.to_string())?;
     rx.recv().map(Some).map_err(|err| err.to_string())
 }
 
@@ -565,5 +581,48 @@ mod driver_install {
     #[cfg(target_os = "macos")]
     fn osa(script: &str) -> String {
         script.replace('\\', "\\\\").replace('"', "\\\"")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn settings(enabled: bool) -> UiSettings {
+        UiSettings {
+            input_device: None,
+            output_device: None,
+            far_device: None,
+            enabled,
+            muted: false,
+            aec_enabled: true,
+            ns_backend: NsBackend::RnNoise,
+            strength: 1.0,
+            monitor_cleaned: false,
+            clean_incoming: true,
+        }
+    }
+
+    #[test]
+    fn off_disables_processing_without_muting() {
+        let config = match session_config(&settings(false)) {
+            Ok(config) => config,
+            Err(err) => {
+                // Windows without VB-CABLE or HushVad cannot build a route.
+                assert!(err.contains("VB-CABLE") || err.contains("device"));
+                return;
+            }
+        };
+        assert!(!config.pipeline.enabled);
+        assert!(!config.pipeline.muted);
+    }
+
+    #[test]
+    fn on_enables_processing() {
+        let Ok(config) = session_config(&settings(true)) else {
+            return;
+        };
+        assert!(config.pipeline.enabled);
+        assert!(!config.pipeline.muted);
     }
 }

@@ -342,6 +342,35 @@ mod tests {
     }
 
     #[test]
+    fn the_ring_stays_readable_while_it_is_active() {
+        let segment = TestSegment::create();
+        let publisher = &segment.publisher;
+        publisher.set_active(true);
+        let mut signal = vec![0.0f32; 2000];
+        for (i, sample) in signal.iter_mut().enumerate() {
+            *sample = i as f32 * 0.001;
+        }
+        publisher.write(&signal);
+        let attachment = RingAttachment::attach_named(&segment.name).unwrap();
+        let mut reader = attachment.reader().unwrap();
+        let mut dst = vec![0.0f32; 16];
+        assert_eq!(reader.read(0.0, &mut dst), 0);
+        assert!(dst.iter().any(|sample| *sample != 0.0));
+
+        publisher.set_active(false);
+        let mut silent = vec![1.0f32; 8];
+        assert_eq!(reader.read(0.0, &mut silent), 8);
+        assert!(silent.iter().all(|sample| *sample == 0.0));
+
+        publisher.set_active(true);
+        publisher.write(&signal);
+        reader.reset();
+        let mut again = vec![0.0f32; 16];
+        assert_eq!(reader.read(0.0, &mut again), 0);
+        assert!(again.iter().any(|sample| *sample != 0.0));
+    }
+
+    #[test]
     fn long_shm_name_is_rejected() {
         let name = format!("/{}", "a".repeat(40));
         match RingPublisher::create_named(&name) {

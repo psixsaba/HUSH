@@ -20,7 +20,6 @@ import {
   shellConnected,
   start,
   stats,
-  stop,
   update,
   type AudioStatus,
   type DeviceLists,
@@ -82,8 +81,7 @@ export function App() {
   const savedUi = useRef(loadUi());
   const [theme, setTheme] = useState<"dark" | "light">(savedUi.current.theme);
   const [devices, setDevices] = useState<DeviceLists>({ inputs: [], outputs: [] });
-  const [running, setRunning] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [running, setRunning] = useState(savedUi.current.running);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reading, setReading] = useState<SessionStats>(emptyStats);
@@ -95,11 +93,26 @@ export function App() {
     platform: "browser",
   });
   const [login, setLogin] = useState(savedUi.current.start_on_login);
-  const [settings, setSettings] = useState<Settings>({ ...defaultSettings, ...loadSettings() });
+  const [settings, setSettings] = useState<Settings>({
+    ...defaultSettings,
+    ...loadSettings(),
+    enabled: savedUi.current.running,
+  });
   const settingsRef = useRef(settings);
-  const runningRef = useRef(false);
+  const runningRef = useRef(savedUi.current.running);
+  const sessionUp = useRef(false);
+  const chain = useRef(Promise.resolve());
   settingsRef.current = settings;
   runningRef.current = running;
+
+  function enqueue(task: () => Promise<void>) {
+    const run = chain.current.then(task, task);
+    chain.current = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -111,41 +124,47 @@ export function App() {
   }, [settings]);
 
   const apply = useCallback(async (next: Settings) => {
+    const previous = settingsRef.current;
+    const devicesChanged =
+      next.input_device !== previous.input_device || next.output_device !== previous.output_device;
+    settingsRef.current = next;
     setSettings(next);
-    if (runningRef.current && connected) {
+    if (!connected || !sessionUp.current) return;
+    void enqueue(async () => {
       try {
-        await update(next);
+        if (devicesChanged) {
+          await start(settingsRef.current);
+          sessionUp.current = true;
+        } else {
+          await update(settingsRef.current);
+        }
       } catch (err) {
         setError(String(err));
       }
-    }
+    });
   }, [connected]);
 
-  const setEngine = useCallback(async (on: boolean) => {
-    if (!connected) {
-      setRunning(on);
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      if (on) {
-        await start(settingsRef.current);
-        setRunning(true);
-        await setTrayRunning(true);
-      } else {
-        await stop();
-        setRunning(false);
-        setReading(emptyStats);
-        await setTrayRunning(false);
+  // OFF is passthrough: the session keeps publishing the microphone so a call
+  // still hears it. Stopping the session would silence HUSH Microphone.
+  const setProcessing = useCallback((processing: boolean) => {
+    setRunning(processing);
+    const next = { ...settingsRef.current, enabled: processing };
+    settingsRef.current = next;
+    setSettings(next);
+    if (!connected) return;
+    void enqueue(async () => {
+      try {
+        if (!sessionUp.current) {
+          await start(settingsRef.current);
+          sessionUp.current = true;
+        } else {
+          await update(settingsRef.current);
+        }
+        await setTrayRunning(settingsRef.current.enabled);
+      } catch (err) {
+        setError(String(err));
       }
-    } catch (err) {
-      setError(String(err));
-      setRunning(false);
-      await setTrayRunning(false).catch(() => undefined);
-    } finally {
-      setBusy(false);
-    }
+    });
   }, [connected]);
 
   useEffect(() => {
@@ -170,20 +189,20 @@ export function App() {
     if (connected && savedUi.current.start_on_login) {
       setOpenAtLogin(true).catch((err: unknown) => setError(String(err)));
     }
-    if (connected && savedUi.current.running) {
-      void setEngine(true);
+    if (connected) {
+      setProcessing(savedUi.current.running);
     }
     return () => {
       cancel = true;
     };
-  }, [connected, setEngine]);
+  }, [connected, setProcessing]);
 
   useEffect(() => {
     if (!connected) return;
     let unlisten: (() => void) | undefined;
     let stopListen = false;
     listenTray(() => {
-      void setEngine(!runningRef.current);
+      setProcessing(!runningRef.current);
     }).then((done) => {
       if (stopListen) done();
       else unlisten = done;
@@ -192,10 +211,10 @@ export function App() {
       stopListen = true;
       unlisten?.();
     };
-  }, [connected, setEngine]);
+  }, [connected, setProcessing]);
 
   useEffect(() => {
-    if (!connected || !running) return;
+    if (!connected) return;
     const timer = window.setInterval(() => {
       stats()
         .then((next) => {
@@ -206,7 +225,7 @@ export function App() {
       audioStatus().then(setAudio).catch(() => undefined);
     }, 200);
     return () => window.clearInterval(timer);
-  }, [connected, running]);
+  }, [connected]);
 
   async function onLogin(next: boolean) {
     setLogin(next);
@@ -300,14 +319,13 @@ export function App() {
           className={active ? "power on" : "power"}
           type="button"
           aria-pressed={active}
-          disabled={busy}
-          onClick={() => void setEngine(!running)}
+          onClick={() => setProcessing(!running)}
         >
           <span>{active ? "ON" : "OFF"}</span>
         </button>
         <div className="hero-copy">
           <p className={active ? "state on" : "state"}>{active ? "Active" : "Off"}</p>
-          <h2>{active ? "HUSH is cleaning audio." : "HUSH is standing by."}</h2>
+          <h2>{active ? "HUSH is cleaning audio." : "Microphone is passed through."}</h2>
           <p className="lede">
             {vbcable ? (
               <>
@@ -320,9 +338,9 @@ export function App() {
             )}
           </p>
           <div className="readouts">
-            <Readout label="CPU" value={active ? `${meter.cpu_percent.toFixed(1)}%` : "—"} />
+            <Readout label="CPU" value={reading.frames > 0 || demo ? `${meter.cpu_percent.toFixed(1)}%` : "—"} />
             <Readout label="Latency" value={active && settings.enabled ? `${latency.toFixed(0)} ms` : "—"} />
-            <Readout label="Frames" value={active ? String(meter.frames) : "0"} />
+            <Readout label="Frames" value={demo ? "0" : String(reading.frames)} />
           </div>
         </div>
       </section>
@@ -334,7 +352,7 @@ export function App() {
             label="Clean my microphone"
             detail="Outgoing voice. Off is a straight wire, with no model delay."
             checked={settings.enabled}
-            onChange={(enabled) => void apply({ ...settings, enabled })}
+            onChange={(enabled) => setProcessing(enabled)}
           />
           {vbcable ? (
             <p className="hint toggle">
@@ -465,7 +483,7 @@ function Toggle({
         <Label>{label}</Label>
         <p className="hint">{detail}</p>
       </div>
-      <Switch checked={checked} onCheckedChange={onChange} />
+      <Switch aria-label={label} checked={checked} onCheckedChange={onChange} />
     </div>
   );
 }
