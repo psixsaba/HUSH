@@ -55,6 +55,16 @@ jobs:
           New-Item -ItemType Directory -Force -Path apps/desktop/dist | Out-Null
           Set-Content -Path apps/desktop/dist/index.html -Value '<!doctype html><title>HUSH</title>' -Encoding ascii
           cargo build -p hush-cli -p hush-desktop --release
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Power switch tests
+        working-directory: apps/desktop
+        run: npm ci && npm test
   macos-driver:
     runs-on: macos-latest
     steps:
@@ -75,3 +85,16 @@ jobs:
           printf '%s\n' '<!doctype html><title>HUSH</title>' > apps/desktop/dist/index.html
           ls -la apps/desktop/dist
           cargo check -p hush-desktop --release
+      - name: Installer smoke
+        run: |
+          set +e
+          bash install.sh
+          code=$?
+          set -e
+          if [ -d /Applications/HUSH.app ] && [ -d /Library/Audio/Plug-Ins/HAL/HUSH.driver ]; then
+            echo "install.sh placed the app and the driver (exit $code)"
+            system_profiler SPAudioDataType | grep -i hush || echo "HUSH devices were not listed. An ad-hoc plugin often needs Privacy & Security > Open Anyway."
+          else
+            echo "install.sh did not install the files (exit $code)"
+            exit 1
+          fi
