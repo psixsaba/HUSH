@@ -126,6 +126,13 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: scripts/macos/sign-if-secrets.sh
+      - name: Free disk before packaging
+        run: |
+          df -h /
+          mkdir -p /tmp/hush-ort
+          find target/release -name '*onnxruntime*.dylib' -exec cp {} /tmp/hush-ort/ \;
+          rm -rf target/release/build target/release/incremental target/release/.fingerprint
+          df -h /
       - name: Disk image and package
         run: |
           scripts/macos/build-unsigned-pkg.sh
